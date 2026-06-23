@@ -49,7 +49,7 @@ func newRoot() *cobra.Command {
 
 	root.AddCommand(
 		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(),
-		newProjectCmd(), newAppCmd(), newAddonCmd(), newEnvCmd(), newTunnelCmd(),
+		newProjectCmd(), newMemberCmd(), newAppCmd(), newAddonCmd(), newEnvCmd(), newTunnelCmd(),
 		newMCPCmd(),
 	)
 	return root
