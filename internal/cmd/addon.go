@@ -228,7 +228,7 @@ func addonRmCmd() *cobra.Command {
 
 func addonConnCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "conn <name>", Short: "Show connection info (no password)", Args: cobra.ExactArgs(1),
+		Use: "conn <name>", Short: "Show connection info, including the password", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
