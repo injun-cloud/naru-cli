@@ -243,7 +243,7 @@ func addonConnCmd() *cobra.Command {
 				if dto.Database != "" {
 					fmt.Printf("database:  %s\nusername:  %s\n", dto.Database, dto.Username)
 				}
-				fmt.Printf("secretRef: %s (password key: PASSWORD)\nenvPrefix: %s\n", dto.SecretRef, dto.EnvPrefix)
+				fmt.Printf("secretRef: %s (k8s Secret holding the password, key: password)\n", dto.SecretRef)
 			})
 		},
 	}
