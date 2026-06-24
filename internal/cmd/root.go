@@ -57,7 +57,7 @@ func newRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "naru",
 		Short: "Naru platform CLI",
-		Long: `Naru platform CLI — manage projects, apps, addons, env, and deploys.
+		Long: `Naru platform CLI — manage projects, apps, addons, secrets, and deploys.
 
 Commands are noun then verb, e.g. "naru app create", "naru addon apply",
 "naru project ls". Run "naru <noun> --help" to list a resource's verbs.
