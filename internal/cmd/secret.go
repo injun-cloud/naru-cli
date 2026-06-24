@@ -12,26 +12,26 @@ import (
 	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
 
-func envPath(project, app string) string {
-	return fmt.Sprintf("/v1/projects/%s/apps/%s/env", project, app)
+func secretPath(project, app string) string {
+	return fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", project, app)
 }
 
-func newEnvCmd() *cobra.Command {
-	c := &cobra.Command{Use: "env", Short: "Manage app environment variables"}
-	c.AddCommand(envLsCmd(), envSetCmd(), envRmCmd(), envLoadCmd())
+func newSecretCmd() *cobra.Command {
+	c := &cobra.Command{Use: "secret", Aliases: []string{"env"}, Short: "Manage app secrets (environment)"}
+	c.AddCommand(secretLsCmd(), secretSetCmd(), secretRmCmd(), secretLoadCmd())
 	return c
 }
 
-func envLsCmd() *cobra.Command {
+func secretLsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "ls <app>", Aliases: []string{"list"}, Short: "List env keys (values never shown)", Args: cobra.ExactArgs(1),
+		Use: "ls <app>", Aliases: []string{"list"}, Short: "List secret keys (values never shown)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
-			var keys apitypes.EnvKeys
-			if err := cl.Get(cmd.Context(), envPath(project, args[0]), &keys); err != nil {
+			var keys apitypes.SecretKeys
+			if err := cl.Get(cmd.Context(), secretPath(project, args[0]), &keys); err != nil {
 				return err
 			}
 			return printer().Emit(keys, func() {
@@ -43,10 +43,10 @@ func envLsCmd() *cobra.Command {
 	}
 }
 
-func envSetCmd() *cobra.Command {
+func secretSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "set <app> KEY=VALUE...", Short: "Set env vars (merge)", Args: cobra.MinimumNArgs(2),
-		Example: "  naru env set api DATABASE_URL=postgres://... LOG_LEVEL=info -p myproj",
+		Use: "set <app> KEY=VALUE...", Short: "Set secrets (merge)", Args: cobra.MinimumNArgs(2),
+		Example: "  naru secret set api DATABASE_URL=postgres://... LOG_LEVEL=info -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -56,38 +56,38 @@ func envSetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cl.Patch(cmd.Context(), envPath(project, args[0]), apitypes.EnvVars{Vars: vars}, nil); err != nil {
+			if err := cl.Patch(cmd.Context(), secretPath(project, args[0]), apitypes.SecretVars{Vars: vars}, nil); err != nil {
 				return err
 			}
-			output.Success(fmt.Sprintf("set %d env var(s) on %s", len(vars), args[0]))
+			output.Success(fmt.Sprintf("set %d secret(s) on %s", len(vars), args[0]))
 			return nil
 		},
 	}
 }
 
-func envRmCmd() *cobra.Command {
+func secretRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "rm <app> KEY...", Aliases: []string{"unset"}, Short: "Delete env vars", Args: cobra.MinimumNArgs(2),
+		Use: "rm <app> KEY...", Aliases: []string{"unset"}, Short: "Delete secrets", Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
 			for _, key := range args[1:] {
-				if err := cl.Delete(cmd.Context(), envPath(project, args[0])+"/"+key, nil); err != nil {
+				if err := cl.Delete(cmd.Context(), secretPath(project, args[0])+"/"+key, nil); err != nil {
 					return err
 				}
 			}
-			output.Success("deleted env var(s)")
+			output.Success("deleted secret(s)")
 			return nil
 		},
 	}
 }
 
-func envLoadCmd() *cobra.Command {
+func secretLoadCmd() *cobra.Command {
 	var file string
 	c := &cobra.Command{
-		Use: "load <app>", Short: "Load env vars from a .env file (merge)", Args: cobra.ExactArgs(1),
+		Use: "load <app>", Short: "Load secrets from a .env file (merge)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -100,10 +100,10 @@ func envLoadCmd() *cobra.Command {
 			if len(vars) == 0 {
 				return fmt.Errorf("no vars found in %s", file)
 			}
-			if err := cl.Patch(cmd.Context(), envPath(project, args[0]), apitypes.EnvVars{Vars: vars}, nil); err != nil {
+			if err := cl.Patch(cmd.Context(), secretPath(project, args[0]), apitypes.SecretVars{Vars: vars}, nil); err != nil {
 				return err
 			}
-			output.Success(fmt.Sprintf("loaded %d env var(s) onto %s", len(vars), args[0]))
+			output.Success(fmt.Sprintf("loaded %d secret(s) onto %s", len(vars), args[0]))
 			return nil
 		},
 	}

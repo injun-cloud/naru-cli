@@ -233,7 +233,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("naru_delete_project",
-		mcp.WithDescription("Delete a project and purge its app env from Vault. Irreversible."),
+		mcp.WithDescription("Delete a project and purge its app secrets from Vault. Irreversible."),
 		mcp.WithString("project", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return write(ctx, "DELETE", "/v1/projects/"+arg(req, "project"), nil)
@@ -309,7 +309,7 @@ func register(s *mcpserver.MCPServer) {
 	})
 
 	s.AddTool(mcp.NewTool("naru_delete_app",
-		mcp.WithDescription("Delete an application and purge its env from Vault. Irreversible."),
+		mcp.WithDescription("Delete an application and purge its secrets from Vault. Irreversible."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -367,19 +367,19 @@ func register(s *mcpserver.MCPServer) {
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs?follow=false", p, a, arg(req, "build")))
 		})
 
-	// --- env ---
+	// --- secrets ---
 
-	s.AddTool(mcp.NewTool("naru_get_env",
-		mcp.WithDescription("List an app's env var KEYS (values are never returned)."),
+	s.AddTool(mcp.NewTool("naru_get_secret",
+		mcp.WithDescription("List an app's secret KEYS (values are never returned)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAppEnv(req)
-			return getInto[apitypes.EnvVars](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/env", p, a))
+			return getInto[apitypes.SecretKeys](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_set_env",
-		mcp.WithDescription("Set (merge) environment variables on an app. Takes effect on the next sync/rollout."),
+	s.AddTool(mcp.NewTool("naru_set_secret",
+		mcp.WithDescription("Set (merge) secrets on an app. They become environment variables; takes effect on the next sync/rollout."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
 		mcp.WithObject("vars", mcp.Required(), mcp.Description("map of KEY to VALUE")),
@@ -390,17 +390,17 @@ func register(s *mcpserver.MCPServer) {
 			for k, v := range req.GetArguments()["vars"].(map[string]any) {
 				vars[k] = fmt.Sprint(v)
 			}
-			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s/env", p, a), apitypes.EnvVars{Vars: vars})
+			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a), apitypes.SecretVars{Vars: vars})
 		})
 
-	s.AddTool(mcp.NewTool("naru_delete_env",
-		mcp.WithDescription("Delete one env var key from an app."),
+	s.AddTool(mcp.NewTool("naru_delete_secret",
+		mcp.WithDescription("Delete one secret key from an app."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
 		mcp.WithString("key", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAppEnv(req)
-			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/apps/%s/env/%s", p, a, arg(req, "key")), nil)
+			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets/%s", p, a, arg(req, "key")), nil)
 		})
 
 	// --- addons ---
