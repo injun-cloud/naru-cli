@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,12 @@ import (
 
 	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
+
+// NotFound reports whether err is a 404 from the server.
+func NotFound(err error) bool {
+	var ae *APIError
+	return errors.As(err, &ae) && ae.Status == http.StatusNotFound
+}
 
 // Client talks to naru-server.
 type Client struct {

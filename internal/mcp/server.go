@@ -102,21 +102,88 @@ func collectLogs(ctx context.Context, path string) (*mcp.CallToolResult, error) 
 
 func arg(req mcp.CallToolRequest, k string) string { return req.GetString(k, "") }
 
-// jsonArg parses an optional JSON-string argument into *T (nil if absent).
-func jsonArg[T any](req mcp.CallToolRequest, key string) (*T, error) {
-	raw := arg(req, key)
-	if raw == "" {
-		return nil, nil
-	}
-	var v T
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
-		return nil, fmt.Errorf("%s must be a JSON object: %w", key, err)
-	}
-	return &v, nil
-}
-
 func projAppEnv(req mcp.CallToolRequest) (string, string) {
 	return arg(req, "project"), arg(req, "app")
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// applyToolSchema builds an apply tool's input schema: {project, spec} where the
+// spec sub-schema is taken straight from the platform's project schema so the
+// agent sees the exact, typed field shape (single source of truth).
+func applyToolSchema(specField string) json.RawMessage {
+	var root map[string]any
+	_ = json.Unmarshal(apitypes.RawSchema(), &root)
+	spec := map[string]any{"type": "object"} // fallback
+	if props, ok := root["properties"].(map[string]any); ok {
+		if f, ok := props[specField].(map[string]any); ok {
+			if items, ok := f["items"].(map[string]any); ok {
+				spec = items
+			}
+		}
+	}
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"project": map[string]any{"type": "string", "description": "project name"},
+			"spec":    spec,
+		},
+		"required": []string{"project", "spec"},
+	}
+	b, _ := json.Marshal(schema)
+	return b
+}
+
+// specArg re-marshals the structured "spec" object argument into v.
+func specArg(req mcp.CallToolRequest, v any) error {
+	raw, err := json.Marshal(req.GetArguments()["spec"])
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, v)
+}
+
+// upsertApp creates the app if absent, else replaces it (PUT, hash preserved).
+func upsertApp(ctx context.Context, cl *client.Client, project string, spec apitypes.AppSpec) (string, error) {
+	if spec.Name == "" || spec.Git.Owner == "" || spec.Git.Repo == "" {
+		return "", fmt.Errorf("spec needs name and git.owner/git.repo")
+	}
+	spec.Git.Type = "github"
+	if spec.Git.Branch == "" {
+		spec.Git.Branch = "main"
+	}
+	path := fmt.Sprintf("/v1/projects/%s/apps/%s", project, spec.Name)
+	var out apitypes.AppSpec
+	if err := cl.Get(ctx, path, &apitypes.AppSpec{}); err == nil {
+		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
+		return "updated", cl.Put(ctx, path, req, &out)
+	} else if !client.NotFound(err) {
+		return "", err
+	}
+	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
+	return "created", cl.Post(ctx, "/v1/projects/"+project+"/apps", req, &out)
+}
+
+// upsertAddon creates the addon if absent, else replaces it (type immutable).
+func upsertAddon(ctx context.Context, cl *client.Client, project string, spec apitypes.AddonSpec) (string, error) {
+	if spec.Name == "" || spec.Type == "" || spec.Version == "" {
+		return "", fmt.Errorf("spec needs name, type and version")
+	}
+	if spec.Size == "" {
+		spec.Size = "1Gi"
+	}
+	req := apitypes.AddonCreateRequest{Name: spec.Name, Type: spec.Type, Version: spec.Version, Size: spec.Size, Resources: spec.Resources}
+	if spec.Port > 0 {
+		req.Port = &spec.Port
+	}
+	path := fmt.Sprintf("/v1/projects/%s/addons/%s", project, spec.Name)
+	var out apitypes.AddonSpec
+	if err := cl.Get(ctx, path, &apitypes.AddonSpec{}); err == nil {
+		return "updated", cl.Put(ctx, path, req, &out)
+	} else if !client.NotFound(err) {
+		return "", err
+	}
+	return "created", cl.Post(ctx, "/v1/projects/"+project+"/addons", req, &out)
 }
 
 func register(s *mcpserver.MCPServer) {
@@ -217,99 +284,29 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.AppSpec](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_create_app",
-		mcp.WithDescription(`Create an application from a GitHub repo.
-
-The repo must have the Naru GitHub App installed (the error includes an install URL if not).
-After creation, push to the branch and CI builds + deploys automatically — do NOT trigger a deploy
-for a normal push. The image only appears once the first build fills in the git hash.
-
-endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"routes":["api.injun.dev"]}].`),
-		mcp.WithString("project", mcp.Required()),
-		mcp.WithString("name", mcp.Required(), mcp.Description("app name: lowercase, digits, hyphens")),
-		mcp.WithString("github_owner", mcp.Required()),
-		mcp.WithString("github_repo", mcp.Required()),
-		mcp.WithString("github_branch", mcp.Description("default: main")),
-		mcp.WithNumber("replicas", mcp.Description("default: 1")),
-		mcp.WithString("endpoints", mcp.Description(`JSON array, e.g. [{"port":8080,"routes":["api.injun.dev"]}]`)),
-		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"256Mi"}}`)),
-		mcp.WithString("rollout", mcp.Description(`JSON RolloutSpec, e.g. {"strategy":"canary","steps":[{"weight":20,"pause":"30s"}]}`)), nd),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			branch := arg(req, "github_branch")
-			if branch == "" {
-				branch = "main"
-			}
-			body := apitypes.AppCreateRequest{
-				Name: arg(req, "name"),
-				Git:  apitypes.GitSpec{Type: "github", Owner: arg(req, "github_owner"), Repo: arg(req, "github_repo"), Branch: branch},
-			}
-			if n := req.GetInt("replicas", 0); n > 0 {
-				body.Replicas = &n
-			}
-			if raw := arg(req, "endpoints"); raw != "" {
-				if err := json.Unmarshal([]byte(raw), &body.Endpoints); err != nil {
-					return errResult(fmt.Errorf("endpoints must be a JSON array: %w", err)), nil
-				}
-			}
-			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Resources = rs
-			ro, err := jsonArg[apitypes.RolloutSpec](req, "rollout")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Rollout = ro
-			return write(ctx, "POST", "/v1/projects/"+arg(req, "project")+"/apps", body)
-		})
-
-	s.AddTool(mcp.NewTool("naru_update_app",
-		mcp.WithDescription("Update an application (partial). Provide any of: branch, replicas, endpoints, resources, rollout."),
-		mcp.WithString("project", mcp.Required()),
-		mcp.WithString("app", mcp.Required()),
-		mcp.WithString("branch", mcp.Description("new git branch")),
-		mcp.WithNumber("replicas", mcp.Description("new replica count")),
-		mcp.WithString("endpoints", mcp.Description("JSON array of {port, routes?}")),
-		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m"},"limits":{"memory":"256Mi"}}`)),
-		mcp.WithString("rollout", mcp.Description(`JSON RolloutSpec, e.g. {"strategy":"canary","steps":[{"weight":20,"pause":"30s"}]}`)),
-		mcp.WithIdempotentHintAnnotation(true), nd),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			p, a := projAppEnv(req)
-			var body apitypes.AppUpdateRequest
-			if b := arg(req, "branch"); b != "" {
-				// PATCH replaces the whole git block, so fetch current to keep owner/repo.
-				cl, err := newClient()
-				if err != nil {
-					return errResult(err), nil
-				}
-				var cur apitypes.AppSpec
-				if err := cl.Get(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s", p, a), &cur); err != nil {
-					return errResult(err), nil
-				}
-				cur.Git.Branch = b
-				body.Git = &cur.Git
-			}
-			if n := req.GetInt("replicas", 0); n > 0 {
-				body.Replicas = &n
-			}
-			if raw := arg(req, "endpoints"); raw != "" {
-				if err := json.Unmarshal([]byte(raw), &body.Endpoints); err != nil {
-					return errResult(fmt.Errorf("endpoints must be a JSON array: %w", err)), nil
-				}
-			}
-			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Resources = rs
-			ro, err := jsonArg[apitypes.RolloutSpec](req, "rollout")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Rollout = ro
-			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s", p, a), body)
-		})
+	applyApp := mcp.NewToolWithRawSchema("naru_apply_app",
+		"Create or update an application (declarative upsert). `spec` is the full app "+
+			"spec (name, git, replicas, resources, rollout, endpoints) — its fields match "+
+			"`naru_schema`. The repo must have the Naru GitHub App installed. The CI-owned "+
+			"git hash is preserved; a normal push deploys automatically (no separate deploy needed).",
+		applyToolSchema("applications"))
+	applyApp.Annotations.DestructiveHint = ptr(false)
+	applyApp.Annotations.IdempotentHint = ptr(true)
+	s.AddTool(applyApp, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		cl, err := newClient()
+		if err != nil {
+			return errResult(err), nil
+		}
+		var spec apitypes.AppSpec
+		if err := specArg(req, &spec); err != nil {
+			return errResult(err), nil
+		}
+		action, err := upsertApp(ctx, cl, arg(req, "project"), spec)
+		if err != nil {
+			return errResult(err), nil
+		}
+		return mcp.NewToolResultText(action + " app " + spec.Name), nil
+	})
 
 	s.AddTool(mcp.NewTool("naru_delete_app",
 		mcp.WithDescription("Delete an application and purge its env from Vault. Irreversible."),
@@ -423,55 +420,29 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 			return getInto[apitypes.ConnectionDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", arg(req, "project"), arg(req, "addon")))
 		})
 
-	s.AddTool(mcp.NewTool("naru_create_addon",
-		mcp.WithDescription("Create an addon (database/cache). type: mysql | postgres | mongodb | redis. "+
-			"size like \"1Gi\". A random password is generated and injected into apps as {TYPE}_* env vars."),
-		mcp.WithString("project", mcp.Required()),
-		mcp.WithString("name", mcp.Required()),
-		mcp.WithString("type", mcp.Required(), mcp.Description("mysql|postgres|mongodb|redis")),
-		mcp.WithString("version", mcp.Required(), mcp.Description(`image tag, e.g. "16"`)),
-		mcp.WithString("size", mcp.Required(), mcp.Description(`PVC size, e.g. "1Gi"`)),
-		mcp.WithNumber("port", mcp.Description("override the default port")),
-		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m","memory":"256Mi"}}`)), nd),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			body := apitypes.AddonCreateRequest{
-				Name: arg(req, "name"), Type: arg(req, "type"),
-				Version: arg(req, "version"), Size: arg(req, "size"),
-			}
-			if p := req.GetInt("port", 0); p > 0 {
-				body.Port = &p
-			}
-			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Resources = rs
-			return write(ctx, "POST", "/v1/projects/"+arg(req, "project")+"/addons", body)
-		})
-
-	s.AddTool(mcp.NewTool("naru_update_addon",
-		mcp.WithDescription("Update an addon (version/size/port/resources; type is immutable)."),
-		mcp.WithString("project", mcp.Required()),
-		mcp.WithString("addon", mcp.Required()),
-		mcp.WithString("version", mcp.Description("new image tag")),
-		mcp.WithString("size", mcp.Description("new PVC size (grow only)")),
-		mcp.WithNumber("port", mcp.Description("new port")),
-		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m"}}`)),
-		mcp.WithIdempotentHintAnnotation(true), nd),
-		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			var body apitypes.AddonCreateRequest
-			body.Version = arg(req, "version")
-			body.Size = arg(req, "size")
-			if p := req.GetInt("port", 0); p > 0 {
-				body.Port = &p
-			}
-			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
-			if err != nil {
-				return errResult(err), nil
-			}
-			body.Resources = rs
-			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/addons/%s", arg(req, "project"), arg(req, "addon")), body)
-		})
+	applyAddon := mcp.NewToolWithRawSchema("naru_apply_addon",
+		"Create or update an addon (declarative upsert). `spec` is the full addon spec "+
+			"(name, type, version, size, port, resources) — fields match `naru_schema`. The "+
+			"addon type is immutable. A random password is generated and injected into apps "+
+			"as {TYPE}_* env vars.",
+		applyToolSchema("addons"))
+	applyAddon.Annotations.DestructiveHint = ptr(false)
+	applyAddon.Annotations.IdempotentHint = ptr(true)
+	s.AddTool(applyAddon, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		cl, err := newClient()
+		if err != nil {
+			return errResult(err), nil
+		}
+		var spec apitypes.AddonSpec
+		if err := specArg(req, &spec); err != nil {
+			return errResult(err), nil
+		}
+		action, err := upsertAddon(ctx, cl, arg(req, "project"), spec)
+		if err != nil {
+			return errResult(err), nil
+		}
+		return mcp.NewToolResultText(action + " addon " + spec.Name), nil
+	})
 
 	s.AddTool(mcp.NewTool("naru_delete_addon",
 		mcp.WithDescription("Delete an addon and its data volume. Irreversible."),

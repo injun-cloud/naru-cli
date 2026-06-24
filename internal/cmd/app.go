@@ -9,55 +9,11 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/injun-cloud/naru-cli/internal/client"
 	"github.com/injun-cloud/naru-cli/internal/output"
 	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
-
-// resourceFromFlags builds a ResourceSpec from cpu/memory request+limit flags,
-// returning nil if none are set so it doesn't clobber an existing spec.
-func resourceFromFlags(cpuReq, memReq, cpuLim, memLim string) *apitypes.ResourceSpec {
-	rs := &apitypes.ResourceSpec{}
-	put := func(m *map[string]string, k, v string) {
-		if v == "" {
-			return
-		}
-		if *m == nil {
-			*m = map[string]string{}
-		}
-		(*m)[k] = v
-	}
-	put(&rs.Requests, "cpu", cpuReq)
-	put(&rs.Requests, "memory", memReq)
-	put(&rs.Limits, "cpu", cpuLim)
-	put(&rs.Limits, "memory", memLim)
-	if rs.Requests == nil && rs.Limits == nil {
-		return nil
-	}
-	return rs
-}
-
-// addResourceFlags registers the shared cpu/memory request+limit flags.
-func addResourceFlags(c *cobra.Command, cpuReq, memReq, cpuLim, memLim *string) {
-	c.Flags().StringVar(cpuReq, "cpu", "", "CPU request, e.g. 100m")
-	c.Flags().StringVar(memReq, "memory", "", "memory request, e.g. 128Mi")
-	c.Flags().StringVar(cpuLim, "cpu-limit", "", "CPU limit")
-	c.Flags().StringVar(memLim, "memory-limit", "", "memory limit")
-}
-
-// loadSpecFile unmarshals a YAML or JSON spec file into v (YAML is a JSON superset).
-func loadSpecFile(path string, v any) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if err := yaml.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	return nil
-}
 
 func appPath(project, app string) string {
 	return fmt.Sprintf("/v1/projects/%s/apps/%s", project, app)
@@ -66,10 +22,42 @@ func appPath(project, app string) string {
 func newAppCmd() *cobra.Command {
 	c := &cobra.Command{Use: "app", Aliases: []string{"a"}, Short: "Manage applications"}
 	c.AddCommand(
-		appListCmd(), appCreateCmd(), appGetCmd(), appSetCmd(), appRmCmd(),
+		appListCmd(), appCreateCmd(), appGetCmd(), appEditCmd(), appApplyCmd(), appRmCmd(),
 		appStatusCmd(), appLogsCmd(), appDeployCmd(), appBuildsCmd(), appTunnelCmd(),
 	)
 	return c
+}
+
+// upsertApp creates the app if absent, otherwise replaces it (PUT). The CI-owned
+// git hash is preserved server-side. It returns "created" or "updated".
+func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AppSpec) (string, error) {
+	if spec.Name == "" {
+		return "", fmt.Errorf("spec is missing 'name'")
+	}
+	if spec.Git.Owner == "" || spec.Git.Repo == "" {
+		return "", fmt.Errorf("spec is missing git.owner/git.repo")
+	}
+	spec.Git.Type = "github"
+	if spec.Git.Branch == "" {
+		spec.Git.Branch = "main"
+	}
+	var out apitypes.AppSpec
+	err := cl.Get(cmd.Context(), appPath(project, spec.Name), &apitypes.AppSpec{})
+	if err == nil {
+		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
+		if err := cl.Put(cmd.Context(), appPath(project, spec.Name), req, &out); err != nil {
+			return "", err
+		}
+		return "updated", nil
+	}
+	if !client.NotFound(err) {
+		return "", err
+	}
+	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
+	if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/apps", req, &out); err != nil {
+		return "", err
+	}
+	return "created", nil
 }
 
 func appListCmd() *cobra.Command {
@@ -102,81 +90,42 @@ func appListCmd() *cobra.Command {
 }
 
 func appCreateCmd() *cobra.Command {
-	var repo, branch, rollout, file string
-	var cpuReq, memReq, cpuLim, memLim string
-	var ports []string
-	var replicas int
+	var repo, branch string
 	c := &cobra.Command{
-		Use: "create <name>", Short: "Create an app", Args: cobra.ExactArgs(1),
-		Long: "Create an app. Use flags for the common fields, or -f to supply a full\n" +
-			"spec (resources, rollout steps, etc. — see `naru schema`); flags override the file.",
+		Use: "create <name>", Short: "Create an app (minimal bootstrap)", Args: cobra.ExactArgs(1),
+		Long: "Bootstrap an app from a repo. For the full spec (replicas, resources,\n" +
+			"rollout, endpoints) use `naru app edit` or `naru app apply -f`.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
-			var req apitypes.AppCreateRequest
-			if file != "" {
-				if err := loadSpecFile(file, &req); err != nil {
-					return err
-				}
+			owner, name, ok := strings.Cut(repo, "/")
+			if !ok {
+				return fmt.Errorf("--repo must be owner/repo")
 			}
-			req.Name = args[0]
-			req.Git.Type = "github"
-			if repo != "" {
-				owner, name, ok := strings.Cut(repo, "/")
-				if !ok {
-					return fmt.Errorf("--repo must be owner/repo")
-				}
-				req.Git.Owner, req.Git.Repo = owner, name
+			spec := apitypes.AppSpec{
+				Name: args[0],
+				Git:  apitypes.GitSpec{Type: "github", Owner: owner, Repo: name, Branch: branch},
 			}
-			if req.Git.Owner == "" || req.Git.Repo == "" {
-				return fmt.Errorf("repo is required (set --repo owner/repo or git.owner/git.repo in -f)")
-			}
-			if branch != "" {
-				req.Git.Branch = branch
-			}
-			if req.Git.Branch == "" {
-				req.Git.Branch = "main"
-			}
-			if len(ports) > 0 {
-				if req.Endpoints, err = parsePorts(ports); err != nil {
-					return err
-				}
-			}
-			if replicas > 0 {
-				req.Replicas = &replicas
-			}
-			if rollout != "" {
-				if req.Rollout == nil {
-					req.Rollout = &apitypes.RolloutSpec{}
-				}
-				req.Rollout.Strategy = rollout
-			}
-			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
-				req.Resources = rs
-			}
-			var out apitypes.AppSpec
-			if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/apps", req, &out); err != nil {
+			action, err := upsertApp(cmd, cl, project, spec)
+			if err != nil {
 				return err
 			}
-			output.Success("created app " + args[0] + " — push to its repo to trigger the first build")
+			output.Success(action + " app " + args[0] + " — edit it or push to its repo to build")
 			return nil
 		},
 	}
-	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
-	c.Flags().StringVar(&repo, "repo", "", "owner/repo")
+	c.Flags().StringVar(&repo, "repo", "", "owner/repo (required)")
 	c.Flags().StringVar(&branch, "branch", "", "git branch (default: main)")
-	c.Flags().StringArrayVar(&ports, "port", nil, "PORT[:host[/path]] (repeatable)")
-	c.Flags().IntVar(&replicas, "replicas", 0, "replica count")
-	c.Flags().StringVar(&rollout, "rollout", "", "rollout strategy: rolling|canary|bluegreen")
-	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
+	_ = c.MarkFlagRequired("repo")
 	return c
 }
 
 func appGetCmd() *cobra.Command {
-	return &cobra.Command{
-		Use: "get <name>", Short: "Show an app", Args: cobra.ExactArgs(1),
+	var outFmt string
+	c := &cobra.Command{
+		Use: "get <name>", Short: "Show an app (-o yaml for the editable spec)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -185,6 +134,14 @@ func appGetCmd() *cobra.Command {
 			var a apitypes.AppSpec
 			if err := cl.Get(cmd.Context(), appPath(project, args[0]), &a); err != nil {
 				return err
+			}
+			if outFmt == "yaml" {
+				b, err := marshalSpecYAML(a)
+				if err != nil {
+					return err
+				}
+				fmt.Print(string(b))
+				return nil
 			}
 			return printer().Emit(a, func() {
 				fmt.Printf("name:   %s\nrepo:   %s/%s\nbranch: %s\nhash:   %s\n",
@@ -195,68 +152,73 @@ func appGetCmd() *cobra.Command {
 			})
 		},
 	}
+	c.Flags().StringVarP(&outFmt, "output", "o", "", "output format: yaml")
+	return c
 }
 
-func appSetCmd() *cobra.Command {
-	var branch, rollout, file string
-	var cpuReq, memReq, cpuLim, memLim string
-	var ports []string
-	var replicas int
-	c := &cobra.Command{
-		Use: "set <name>", Short: "Update an app (PATCH)", Args: cobra.ExactArgs(1),
-		Long: "Update an app. Only the fields you pass change. Use -f for full-schema\n" +
-			"fields (resources, rollout steps, …); flags override the file.",
+func appEditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "edit <name>", Short: "Edit an app's full spec in $EDITOR", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
-			var req apitypes.AppUpdateRequest
-			if file != "" {
-				if err := loadSpecFile(file, &req); err != nil {
-					return err
-				}
-			}
-			if branch != "" {
-				// fetch current git to preserve owner/repo
-				var cur apitypes.AppSpec
-				if err := cl.Get(cmd.Context(), appPath(project, args[0]), &cur); err != nil {
-					return err
-				}
-				cur.Git.Branch = branch
-				req.Git = &cur.Git
-			}
-			if replicas > 0 {
-				req.Replicas = &replicas
-			}
-			if rollout != "" {
-				if req.Rollout == nil {
-					req.Rollout = &apitypes.RolloutSpec{}
-				}
-				req.Rollout.Strategy = rollout
-			}
-			if len(ports) > 0 {
-				if req.Endpoints, err = parsePorts(ports); err != nil {
-					return err
-				}
-			}
-			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
-				req.Resources = rs
-			}
-			var out apitypes.AppSpec
-			if err := cl.Patch(cmd.Context(), appPath(project, args[0]), req, &out); err != nil {
+			var cur apitypes.AppSpec
+			if err := cl.Get(cmd.Context(), appPath(project, args[0]), &cur); err != nil {
 				return err
 			}
-			output.Success("updated app " + args[0])
+			cur.Git.Hash = "" // CI-owned; not user-editable
+			initial, err := marshalSpecYAML(cur)
+			if err != nil {
+				return err
+			}
+			edited, err := editInEditor(initial, "yaml")
+			if err != nil {
+				return err
+			}
+			if edited == nil {
+				output.Info("no changes")
+				return nil
+			}
+			var spec apitypes.AppSpec
+			if err := yamlUnmarshal(edited, &spec); err != nil {
+				return err
+			}
+			spec.Name = args[0] // name is immutable
+			action, err := upsertApp(cmd, cl, project, spec)
+			if err != nil {
+				return err
+			}
+			output.Success(action + " app " + args[0])
 			return nil
 		},
 	}
-	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
-	c.Flags().StringVar(&branch, "branch", "", "git branch")
-	c.Flags().StringArrayVar(&ports, "port", nil, "PORT[:host[/path]] (replaces endpoints)")
-	c.Flags().IntVar(&replicas, "replicas", 0, "replica count")
-	c.Flags().StringVar(&rollout, "rollout", "", "rollout strategy")
-	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
+}
+
+func appApplyCmd() *cobra.Command {
+	var file string
+	c := &cobra.Command{
+		Use: "apply", Short: "Create or update an app from a spec file (-f)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			var spec apitypes.AppSpec
+			if err := loadSpecFile(file, &spec); err != nil {
+				return err
+			}
+			action, err := upsertApp(cmd, cl, project, spec)
+			if err != nil {
+				return err
+			}
+			output.Success(action + " app " + spec.Name)
+			return nil
+		},
+	}
+	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON, - for stdin)")
+	_ = c.MarkFlagRequired("file")
 	return c
 }
 
@@ -401,24 +363,6 @@ func appTunnelCmd() *cobra.Command {
 	c.Flags().IntVar(&port, "port", 0, "target app endpoint port (required)")
 	c.Flags().IntVar(&localPort, "local-port", 0, "local port (default: same as --port)")
 	return c
-}
-
-// parsePorts converts "PORT[:host[/path]]" strings into endpoints.
-func parsePorts(ports []string) ([]apitypes.EndpointSpec, error) {
-	var eps []apitypes.EndpointSpec
-	for _, p := range ports {
-		portStr, route, hasRoute := strings.Cut(p, ":")
-		n, err := strconv.Atoi(portStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid port %q", p)
-		}
-		ep := apitypes.EndpointSpec{Port: n}
-		if hasRoute && route != "" {
-			ep.Routes = []string{route}
-		}
-		eps = append(eps, ep)
-	}
-	return eps, nil
 }
 
 // runTunnel opens the local listener and blocks until interrupted.
