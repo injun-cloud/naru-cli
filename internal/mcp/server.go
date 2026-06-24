@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -153,6 +154,48 @@ func register(s *mcpserver.MCPServer) {
 			}
 			var out []apitypes.BuildInfo
 			path := fmt.Sprintf("/v1/projects/%s/apps/%s/builds", req.GetString("project", ""), req.GetString("app", ""))
+			if err := cl.Get(ctx, path, &out); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return jsonResult(out)
+		},
+	)
+
+	s.AddTool(
+		mcp.NewTool("naru_app_logs",
+			mcp.WithDescription("Get an app's recent runtime logs (bounded tail, not streaming)"),
+			mcp.WithString("project", mcp.Required()),
+			mcp.WithString("app", mcp.Required()),
+			mcp.WithNumber("tail", mcp.Description("number of lines from the end (default 200)")),
+		),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			cl, err := newClient()
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			tail := req.GetInt("tail", 200)
+			path := fmt.Sprintf("/v1/projects/%s/apps/%s/logs?follow=false&tail=%d",
+				req.GetString("project", ""), req.GetString("app", ""), tail)
+			var lines []string
+			if err := cl.Stream(ctx, path, func(l string) { lines = append(lines, l) }); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(strings.Join(lines, "\n")), nil
+		},
+	)
+
+	s.AddTool(
+		mcp.NewTool("naru_list_members",
+			mcp.WithDescription("List a project's owners (members)"),
+			mcp.WithString("project", mcp.Required()),
+		),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			cl, err := newClient()
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			var out apitypes.MembersResponse
+			path := fmt.Sprintf("/v1/projects/%s/members", req.GetString("project", ""))
 			if err := cl.Get(ctx, path, &out); err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
