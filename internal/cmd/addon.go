@@ -240,8 +240,8 @@ func addonConnCmd() *cobra.Command {
 			}
 			return printer().Emit(dto, func() {
 				fmt.Printf("type:     %s\nhost:     %s\nport:     %d\n", dto.Type, dto.Host, dto.Port)
-				if dto.Database != "" {
-					fmt.Printf("database: %s\nusername: %s\n", dto.Database, dto.Username)
+				if dto.Username != "" {
+					fmt.Printf("username: %s (default superuser)\n", dto.Username)
 				}
 				fmt.Printf("password: %s\n", dto.Password)
 			})
