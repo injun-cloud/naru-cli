@@ -142,7 +142,11 @@ func addonGetCmd() *cobra.Command {
 func addonEditCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "edit <name>", Short: "Edit an addon's full spec in $EDITOR", Args: cobra.ExactArgs(1),
+		Example: "  naru addon edit db -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if flagNoInput {
+				return fmt.Errorf("edit needs an interactive editor; use `naru addon apply -f` instead")
+			}
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err

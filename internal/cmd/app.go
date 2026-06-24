@@ -165,6 +165,9 @@ func appEditCmd() *cobra.Command {
 		Use: "edit <name>", Short: "Edit an app's full spec in $EDITOR", Args: cobra.ExactArgs(1),
 		Example: "  naru app edit api -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if flagNoInput {
+				return fmt.Errorf("edit needs an interactive editor; use `naru app apply -f` instead")
+			}
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err

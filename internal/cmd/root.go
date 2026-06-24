@@ -22,6 +22,8 @@ var (
 	flagToken   string
 	flagJSON    bool
 	flagJQ      string
+	flagFields  []string
+	flagNoInput bool
 
 	version = "dev"
 )
@@ -41,8 +43,11 @@ func Execute(v string) {
 func exitCode(err error) int {
 	var ae *client.APIError
 	if errors.As(err, &ae) {
-		if ae.Status == http.StatusConflict || ae.Status == http.StatusTooManyRequests || ae.Status >= 500 {
-			return 2
+		switch {
+		case ae.Status == http.StatusUnauthorized || ae.Status == http.StatusForbidden:
+			return 3 // auth — run `naru login` (or check access)
+		case ae.Status == http.StatusConflict || ae.Status == http.StatusTooManyRequests || ae.Status >= 500:
+			return 2 // retryable
 		}
 	}
 	return 1
@@ -59,7 +64,7 @@ Commands are noun then verb, e.g. "naru app create", "naru addon apply",
 
 Output: human tables by default; pass --json or --jq '<expr>' for machine output,
 and "get -o yaml" for an editable spec. Data goes to stdout, status/errors to stderr.
-Exit codes: 0 ok, 2 retryable (conflict/rate-limit/server), 1 other.
+Exit codes: 0 ok, 2 retryable (conflict/rate-limit/server), 3 auth (run login), 1 other.
 
 Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
 "apply -f" (or "edit"). Run "naru schema" for the project-spec field reference.`,
@@ -73,6 +78,8 @@ Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
 	pf.StringVar(&flagToken, "token", "", "bearer token (overrides config/$NARU_TOKEN)")
 	pf.BoolVar(&flagJSON, "json", false, "output JSON")
 	pf.StringVar(&flagJQ, "jq", "", "filter JSON output with a jq expression")
+	pf.StringSliceVar(&flagFields, "fields", nil, "JSON output with only these fields, e.g. --fields name,status")
+	pf.BoolVar(&flagNoInput, "no-input", false, "never prompt or open an editor (for CI/agents)")
 
 	root.AddCommand(
 		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(), newSchemaCmd(),
@@ -113,7 +120,9 @@ func newSchemaCmd() *cobra.Command {
 }
 
 // printer builds the output printer from global flags.
-func printer() *output.Printer { return &output.Printer{JSON: flagJSON, JQ: flagJQ} }
+func printer() *output.Printer {
+	return &output.Printer{JSON: flagJSON, JQ: flagJQ, Fields: flagFields}
+}
 
 // newClient builds an authenticated client from config + flags.
 func newClient() (*client.Client, error) {

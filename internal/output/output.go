@@ -13,8 +13,9 @@ import (
 
 // Printer carries the global output preferences.
 type Printer struct {
-	JSON bool
-	JQ   string
+	JSON   bool
+	JQ     string
+	Fields []string // when set, project JSON output to these top-level keys
 }
 
 // Success prints a green-ish success line to stderr.
@@ -26,19 +27,54 @@ func Info(msg string) { fmt.Fprintln(os.Stderr, msg) }
 // Errf prints an error line to stderr.
 func Errf(format string, a ...any) { fmt.Fprintf(os.Stderr, "✗ "+format+"\n", a...) }
 
-// Emit prints v as JSON when --json/--jq is set; otherwise calls human().
+// Emit prints v as JSON when --json/--jq/--fields is set; otherwise calls human().
 func (p *Printer) Emit(v any, human func()) error {
-	if p.JSON || p.JQ != "" {
+	if p.JSON || p.JQ != "" || len(p.Fields) > 0 {
 		return p.emitJSON(v)
 	}
 	human()
 	return nil
 }
 
+// project keeps only p.Fields on an object, or on each element of an array.
+func (p *Printer) project(v any) any {
+	pick := func(m map[string]any) map[string]any {
+		out := make(map[string]any, len(p.Fields))
+		for _, f := range p.Fields {
+			if val, ok := m[f]; ok {
+				out[f] = val
+			}
+		}
+		return out
+	}
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, e := range t {
+			if m, ok := e.(map[string]any); ok {
+				out = append(out, pick(m))
+			} else {
+				out = append(out, e)
+			}
+		}
+		return out
+	case map[string]any:
+		return pick(t)
+	default:
+		return v
+	}
+}
+
 func (p *Printer) emitJSON(v any) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
+	}
+	if len(p.Fields) > 0 {
+		var parsed any
+		if json.Unmarshal(raw, &parsed) == nil {
+			raw, _ = json.Marshal(p.project(parsed))
+		}
 	}
 	if p.JQ == "" {
 		var pretty any
