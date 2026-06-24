@@ -46,6 +46,7 @@ func envLsCmd() *cobra.Command {
 func envSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "set <app> KEY=VALUE...", Short: "Set env vars (merge)", Args: cobra.MinimumNArgs(2),
+		Example: "  naru env set api DATABASE_URL=postgres://... LOG_LEVEL=info -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {

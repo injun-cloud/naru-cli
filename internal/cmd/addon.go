@@ -84,6 +84,8 @@ func addonCreateCmd() *cobra.Command {
 		Use: "create <name>", Short: "Create an addon (minimal bootstrap)", Args: cobra.ExactArgs(1),
 		Long: "Bootstrap a database/cache. For resources and other fields use\n" +
 			"`naru addon edit` or `naru addon apply -f`.",
+		Example: "  naru addon create db --type postgres --version 16 -p myproj\n" +
+			"  naru addon create cache --type redis --version 7 --size 2Gi -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -180,6 +182,7 @@ func addonApplyCmd() *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use: "apply", Short: "Create or update an addon from a spec file (-f)",
+		Example: "  naru addon apply -f db.yaml -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {

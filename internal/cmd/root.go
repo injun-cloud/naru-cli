@@ -2,7 +2,10 @@
 package cmd
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -10,6 +13,7 @@ import (
 	"github.com/injun-cloud/naru-cli/internal/client"
 	"github.com/injun-cloud/naru-cli/internal/config"
 	"github.com/injun-cloud/naru-cli/internal/output"
+	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
 
 var (
@@ -28,14 +32,37 @@ func Execute(v string) {
 	root := newRoot()
 	if err := root.Execute(); err != nil {
 		output.Errf("%v", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
+}
+
+// exitCode maps an error to a process exit code so a calling agent can branch:
+// 0 success, 2 retryable (conflict / rate-limit / server-side), 1 everything else.
+func exitCode(err error) int {
+	var ae *client.APIError
+	if errors.As(err, &ae) {
+		if ae.Status == http.StatusConflict || ae.Status == http.StatusTooManyRequests || ae.Status >= 500 {
+			return 2
+		}
+	}
+	return 1
 }
 
 func newRoot() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "naru",
-		Short:         "Naru platform CLI",
+		Use:   "naru",
+		Short: "Naru platform CLI",
+		Long: `Naru platform CLI — manage projects, apps, addons, env, and deploys.
+
+Commands are noun then verb, e.g. "naru app create", "naru addon apply",
+"naru project ls". Run "naru <noun> --help" to list a resource's verbs.
+
+Output: human tables by default; pass --json or --jq '<expr>' for machine output,
+and "get -o yaml" for an editable spec. Data goes to stdout, status/errors to stderr.
+Exit codes: 0 ok, 2 retryable (conflict/rate-limit/server), 1 other.
+
+Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
+"apply -f" (or "edit"). Run "naru schema" for the project-spec field reference.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,
@@ -48,11 +75,41 @@ func newRoot() *cobra.Command {
 	pf.StringVar(&flagJQ, "jq", "", "filter JSON output with a jq expression")
 
 	root.AddCommand(
-		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(),
+		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(), newSchemaCmd(),
 		newProjectCmd(), newMemberCmd(), newAppCmd(), newAddonCmd(), newEnvCmd(), newTunnelCmd(),
 		newMCPCmd(),
 	)
 	return root
+}
+
+// newSchemaCmd prints the project-spec JSON schema — the field reference an agent
+// needs to build `app/addon apply` specs. The endpoint is public (token optional).
+func newSchemaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "schema",
+		Short:   "Print the project-spec JSON schema (field reference for apply/edit)",
+		Example: "  naru schema\n  naru schema | jq '.properties.applications.items.properties'",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, err := config.Resolve()
+			if err != nil {
+				return err
+			}
+			url := g.ServerURL
+			if flagServer != "" {
+				url = flagServer
+			}
+			var out apitypes.SchemaResponse
+			if err := client.New(url, g.Token).Get(cmd.Context(), "/v1/schema", &out); err != nil {
+				return err
+			}
+			b, err := json.MarshalIndent(out.JSONSchema, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(b))
+			return nil
+		},
+	}
 }
 
 // printer builds the output printer from global flags.

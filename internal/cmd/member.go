@@ -34,6 +34,7 @@ func newMemberCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use: "add <username>", Short: "Add an owner by GitHub username", Args: cobra.ExactArgs(1),
+			Example: "  naru member add octocat -p myproj",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				cl, project, err := clientAndProject()
 				if err != nil {

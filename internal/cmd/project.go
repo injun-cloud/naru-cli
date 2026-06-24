@@ -36,6 +36,7 @@ func newProjectCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use: "create <name>", Short: "Create a project", Args: cobra.ExactArgs(1),
+			Example: "  naru project create myproj",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				cl, err := newClient()
 				if err != nil {

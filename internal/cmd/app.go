@@ -95,6 +95,8 @@ func appCreateCmd() *cobra.Command {
 		Use: "create <name>", Short: "Create an app (minimal bootstrap)", Args: cobra.ExactArgs(1),
 		Long: "Bootstrap an app from a repo. For the full spec (replicas, resources,\n" +
 			"rollout, endpoints) use `naru app edit` or `naru app apply -f`.",
+		Example: "  naru app create api --repo in-jun/api -p myproj\n" +
+			"  naru app create web --repo in-jun/web --branch dev -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -126,6 +128,8 @@ func appGetCmd() *cobra.Command {
 	var outFmt string
 	c := &cobra.Command{
 		Use: "get <name>", Short: "Show an app (-o yaml for the editable spec)", Args: cobra.ExactArgs(1),
+		Example: "  naru app get api -p myproj\n" +
+			"  naru app get api -o yaml > api.yaml   # edit, then: naru app apply -f api.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -159,6 +163,7 @@ func appGetCmd() *cobra.Command {
 func appEditCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "edit <name>", Short: "Edit an app's full spec in $EDITOR", Args: cobra.ExactArgs(1),
+		Example: "  naru app edit api -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -200,6 +205,8 @@ func appApplyCmd() *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use: "apply", Short: "Create or update an app from a spec file (-f)",
+		Example: "  naru app apply -f api.yaml -p myproj\n" +
+			"  naru app get api -o yaml | yq '.replicas = 3' | naru app apply -f - -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -269,6 +276,7 @@ func appLogsCmd() *cobra.Command {
 	var container string
 	c := &cobra.Command{
 		Use: "logs <name>", Short: "Stream app logs", Args: cobra.ExactArgs(1),
+		Example: "  naru app logs api -p myproj --tail 200\n  naru app logs api -f   # follow",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -290,6 +298,9 @@ func appLogsCmd() *cobra.Command {
 func appDeployCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "deploy <name>", Short: "Trigger a build/deploy", Args: cobra.ExactArgs(1),
+		Long: "Trigger a build/deploy. Only needed for the first build or a re-deploy\n" +
+			"without a code change — a normal `git push` deploys automatically.",
+		Example: "  naru app deploy api -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
