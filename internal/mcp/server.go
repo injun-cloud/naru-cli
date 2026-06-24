@@ -423,8 +423,8 @@ func register(s *mcpserver.MCPServer) {
 	applyAddon := mcp.NewToolWithRawSchema("naru_apply_addon",
 		"Create or update an addon (declarative upsert). `spec` is the full addon spec "+
 			"(name, type, version, size, port, resources) — fields match `naru_schema`. The "+
-			"addon type is immutable. A random password is generated and injected into apps "+
-			"as {TYPE}_* env vars.",
+			"addon type is immutable. A random password is generated into Vault; reach the addon "+
+			"by its name as hostname and wire an app to it with naru_set_secret ({TYPE}_* keys).",
 		applyToolSchema("addons"))
 	applyAddon.Annotations.DestructiveHint = ptr(false)
 	applyAddon.Annotations.IdempotentHint = ptr(true)
