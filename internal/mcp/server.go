@@ -413,7 +413,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("naru_addon_conn",
-		mcp.WithDescription("Get an addon's connection info (host/port/db/user + secretRef; never the password)."),
+		mcp.WithDescription("Get an addon's full connection incl. password (the addon's secret). Fetch this and write the values into an app's secret with naru_set_secret, under whatever key names the app expects."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

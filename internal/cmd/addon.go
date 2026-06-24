@@ -239,11 +239,11 @@ func addonConnCmd() *cobra.Command {
 				return err
 			}
 			return printer().Emit(dto, func() {
-				fmt.Printf("type:      %s\nhost:      %s\nport:      %d\n", dto.Type, dto.Host, dto.Port)
+				fmt.Printf("type:     %s\nhost:     %s\nport:     %d\n", dto.Type, dto.Host, dto.Port)
 				if dto.Database != "" {
-					fmt.Printf("database:  %s\nusername:  %s\n", dto.Database, dto.Username)
+					fmt.Printf("database: %s\nusername: %s\n", dto.Database, dto.Username)
 				}
-				fmt.Printf("secretRef: %s (k8s Secret holding the password, key: password)\n", dto.SecretRef)
+				fmt.Printf("password: %s\n", dto.Password)
 			})
 		},
 	}
