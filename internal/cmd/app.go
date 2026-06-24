@@ -9,11 +9,55 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/injun-cloud/naru-cli/internal/client"
 	"github.com/injun-cloud/naru-cli/internal/output"
 	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
+
+// resourceFromFlags builds a ResourceSpec from cpu/memory request+limit flags,
+// returning nil if none are set so it doesn't clobber an existing spec.
+func resourceFromFlags(cpuReq, memReq, cpuLim, memLim string) *apitypes.ResourceSpec {
+	rs := &apitypes.ResourceSpec{}
+	put := func(m *map[string]string, k, v string) {
+		if v == "" {
+			return
+		}
+		if *m == nil {
+			*m = map[string]string{}
+		}
+		(*m)[k] = v
+	}
+	put(&rs.Requests, "cpu", cpuReq)
+	put(&rs.Requests, "memory", memReq)
+	put(&rs.Limits, "cpu", cpuLim)
+	put(&rs.Limits, "memory", memLim)
+	if rs.Requests == nil && rs.Limits == nil {
+		return nil
+	}
+	return rs
+}
+
+// addResourceFlags registers the shared cpu/memory request+limit flags.
+func addResourceFlags(c *cobra.Command, cpuReq, memReq, cpuLim, memLim *string) {
+	c.Flags().StringVar(cpuReq, "cpu", "", "CPU request, e.g. 100m")
+	c.Flags().StringVar(memReq, "memory", "", "memory request, e.g. 128Mi")
+	c.Flags().StringVar(cpuLim, "cpu-limit", "", "CPU limit")
+	c.Flags().StringVar(memLim, "memory-limit", "", "memory limit")
+}
+
+// loadSpecFile unmarshals a YAML or JSON spec file into v (YAML is a JSON superset).
+func loadSpecFile(path string, v any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal(data, v); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	return nil
+}
 
 func appPath(project, app string) string {
 	return fmt.Sprintf("/v1/projects/%s/apps/%s", project, app)
@@ -58,34 +102,59 @@ func appListCmd() *cobra.Command {
 }
 
 func appCreateCmd() *cobra.Command {
-	var repo, branch, rollout string
+	var repo, branch, rollout, file string
+	var cpuReq, memReq, cpuLim, memLim string
 	var ports []string
 	var replicas int
 	c := &cobra.Command{
 		Use: "create <name>", Short: "Create an app", Args: cobra.ExactArgs(1),
+		Long: "Create an app. Use flags for the common fields, or -f to supply a full\n" +
+			"spec (resources, rollout steps, etc. — see `naru schema`); flags override the file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
-			owner, name, ok := strings.Cut(repo, "/")
-			if !ok {
-				return fmt.Errorf("--repo must be owner/repo")
+			var req apitypes.AppCreateRequest
+			if file != "" {
+				if err := loadSpecFile(file, &req); err != nil {
+					return err
+				}
 			}
-			eps, err := parsePorts(ports)
-			if err != nil {
-				return err
+			req.Name = args[0]
+			req.Git.Type = "github"
+			if repo != "" {
+				owner, name, ok := strings.Cut(repo, "/")
+				if !ok {
+					return fmt.Errorf("--repo must be owner/repo")
+				}
+				req.Git.Owner, req.Git.Repo = owner, name
 			}
-			req := apitypes.AppCreateRequest{
-				Name:      args[0],
-				Git:       apitypes.GitSpec{Type: "github", Owner: owner, Repo: name, Branch: branch},
-				Endpoints: eps,
+			if req.Git.Owner == "" || req.Git.Repo == "" {
+				return fmt.Errorf("repo is required (set --repo owner/repo or git.owner/git.repo in -f)")
+			}
+			if branch != "" {
+				req.Git.Branch = branch
+			}
+			if req.Git.Branch == "" {
+				req.Git.Branch = "main"
+			}
+			if len(ports) > 0 {
+				if req.Endpoints, err = parsePorts(ports); err != nil {
+					return err
+				}
 			}
 			if replicas > 0 {
 				req.Replicas = &replicas
 			}
 			if rollout != "" {
-				req.Rollout = &apitypes.RolloutSpec{Strategy: rollout}
+				if req.Rollout == nil {
+					req.Rollout = &apitypes.RolloutSpec{}
+				}
+				req.Rollout.Strategy = rollout
+			}
+			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
+				req.Resources = rs
 			}
 			var out apitypes.AppSpec
 			if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/apps", req, &out); err != nil {
@@ -95,12 +164,13 @@ func appCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&repo, "repo", "", "owner/repo (required)")
-	c.Flags().StringVar(&branch, "branch", "main", "git branch")
+	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
+	c.Flags().StringVar(&repo, "repo", "", "owner/repo")
+	c.Flags().StringVar(&branch, "branch", "", "git branch (default: main)")
 	c.Flags().StringArrayVar(&ports, "port", nil, "PORT[:host[/path]] (repeatable)")
 	c.Flags().IntVar(&replicas, "replicas", 0, "replica count")
 	c.Flags().StringVar(&rollout, "rollout", "", "rollout strategy: rolling|canary|bluegreen")
-	_ = c.MarkFlagRequired("repo")
+	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
 	return c
 }
 
@@ -128,17 +198,25 @@ func appGetCmd() *cobra.Command {
 }
 
 func appSetCmd() *cobra.Command {
-	var branch, rollout string
+	var branch, rollout, file string
+	var cpuReq, memReq, cpuLim, memLim string
 	var ports []string
 	var replicas int
 	c := &cobra.Command{
 		Use: "set <name>", Short: "Update an app (PATCH)", Args: cobra.ExactArgs(1),
+		Long: "Update an app. Only the fields you pass change. Use -f for full-schema\n" +
+			"fields (resources, rollout steps, …); flags override the file.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
 				return err
 			}
 			var req apitypes.AppUpdateRequest
+			if file != "" {
+				if err := loadSpecFile(file, &req); err != nil {
+					return err
+				}
+			}
 			if branch != "" {
 				// fetch current git to preserve owner/repo
 				var cur apitypes.AppSpec
@@ -152,14 +230,18 @@ func appSetCmd() *cobra.Command {
 				req.Replicas = &replicas
 			}
 			if rollout != "" {
-				req.Rollout = &apitypes.RolloutSpec{Strategy: rollout}
+				if req.Rollout == nil {
+					req.Rollout = &apitypes.RolloutSpec{}
+				}
+				req.Rollout.Strategy = rollout
 			}
 			if len(ports) > 0 {
-				eps, err := parsePorts(ports)
-				if err != nil {
+				if req.Endpoints, err = parsePorts(ports); err != nil {
 					return err
 				}
-				req.Endpoints = eps
+			}
+			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
+				req.Resources = rs
 			}
 			var out apitypes.AppSpec
 			if err := cl.Patch(cmd.Context(), appPath(project, args[0]), req, &out); err != nil {
@@ -169,10 +251,12 @@ func appSetCmd() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
 	c.Flags().StringVar(&branch, "branch", "", "git branch")
 	c.Flags().StringArrayVar(&ports, "port", nil, "PORT[:host[/path]] (replaces endpoints)")
 	c.Flags().IntVar(&replicas, "replicas", 0, "replica count")
 	c.Flags().StringVar(&rollout, "rollout", "", "rollout strategy")
+	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
 	return c
 }
 

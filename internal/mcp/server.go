@@ -102,6 +102,19 @@ func collectLogs(ctx context.Context, path string) (*mcp.CallToolResult, error) 
 
 func arg(req mcp.CallToolRequest, k string) string { return req.GetString(k, "") }
 
+// jsonArg parses an optional JSON-string argument into *T (nil if absent).
+func jsonArg[T any](req mcp.CallToolRequest, key string) (*T, error) {
+	raw := arg(req, key)
+	if raw == "" {
+		return nil, nil
+	}
+	var v T
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object: %w", key, err)
+	}
+	return &v, nil
+}
+
 func projAppEnv(req mcp.CallToolRequest) (string, string) {
 	return arg(req, "project"), arg(req, "app")
 }
@@ -218,7 +231,9 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 		mcp.WithString("github_repo", mcp.Required()),
 		mcp.WithString("github_branch", mcp.Description("default: main")),
 		mcp.WithNumber("replicas", mcp.Description("default: 1")),
-		mcp.WithString("endpoints", mcp.Description(`JSON array, e.g. [{"port":8080,"routes":["api.injun.dev"]}]`)), nd),
+		mcp.WithString("endpoints", mcp.Description(`JSON array, e.g. [{"port":8080,"routes":["api.injun.dev"]}]`)),
+		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"256Mi"}}`)),
+		mcp.WithString("rollout", mcp.Description(`JSON RolloutSpec, e.g. {"strategy":"canary","steps":[{"weight":20,"pause":"30s"}]}`)), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			branch := arg(req, "github_branch")
 			if branch == "" {
@@ -236,22 +251,44 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 					return errResult(fmt.Errorf("endpoints must be a JSON array: %w", err)), nil
 				}
 			}
+			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Resources = rs
+			ro, err := jsonArg[apitypes.RolloutSpec](req, "rollout")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Rollout = ro
 			return write(ctx, "POST", "/v1/projects/"+arg(req, "project")+"/apps", body)
 		})
 
 	s.AddTool(mcp.NewTool("naru_update_app",
-		mcp.WithDescription("Update an application (partial). Provide any of: branch, replicas, endpoints (JSON array)."),
+		mcp.WithDescription("Update an application (partial). Provide any of: branch, replicas, endpoints, resources, rollout."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
 		mcp.WithString("branch", mcp.Description("new git branch")),
 		mcp.WithNumber("replicas", mcp.Description("new replica count")),
 		mcp.WithString("endpoints", mcp.Description("JSON array of {port, routes?}")),
+		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m"},"limits":{"memory":"256Mi"}}`)),
+		mcp.WithString("rollout", mcp.Description(`JSON RolloutSpec, e.g. {"strategy":"canary","steps":[{"weight":20,"pause":"30s"}]}`)),
 		mcp.WithIdempotentHintAnnotation(true), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAppEnv(req)
 			var body apitypes.AppUpdateRequest
 			if b := arg(req, "branch"); b != "" {
-				body.Git = &apitypes.GitSpec{Type: "github", Branch: b}
+				// PATCH replaces the whole git block, so fetch current to keep owner/repo.
+				cl, err := newClient()
+				if err != nil {
+					return errResult(err), nil
+				}
+				var cur apitypes.AppSpec
+				if err := cl.Get(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s", p, a), &cur); err != nil {
+					return errResult(err), nil
+				}
+				cur.Git.Branch = b
+				body.Git = &cur.Git
 			}
 			if n := req.GetInt("replicas", 0); n > 0 {
 				body.Replicas = &n
@@ -261,6 +298,16 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 					return errResult(fmt.Errorf("endpoints must be a JSON array: %w", err)), nil
 				}
 			}
+			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Resources = rs
+			ro, err := jsonArg[apitypes.RolloutSpec](req, "rollout")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Rollout = ro
 			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s", p, a), body)
 		})
 
@@ -384,7 +431,8 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 		mcp.WithString("type", mcp.Required(), mcp.Description("mysql|postgres|mongodb|redis")),
 		mcp.WithString("version", mcp.Required(), mcp.Description(`image tag, e.g. "16"`)),
 		mcp.WithString("size", mcp.Required(), mcp.Description(`PVC size, e.g. "1Gi"`)),
-		mcp.WithNumber("port", mcp.Description("override the default port")), nd),
+		mcp.WithNumber("port", mcp.Description("override the default port")),
+		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m","memory":"256Mi"}}`)), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			body := apitypes.AddonCreateRequest{
 				Name: arg(req, "name"), Type: arg(req, "type"),
@@ -393,7 +441,36 @@ endpoints is a JSON array of {port, routes?:[host,...]} — e.g. [{"port":8080,"
 			if p := req.GetInt("port", 0); p > 0 {
 				body.Port = &p
 			}
+			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Resources = rs
 			return write(ctx, "POST", "/v1/projects/"+arg(req, "project")+"/addons", body)
+		})
+
+	s.AddTool(mcp.NewTool("naru_update_addon",
+		mcp.WithDescription("Update an addon (version/size/port/resources; type is immutable)."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("addon", mcp.Required()),
+		mcp.WithString("version", mcp.Description("new image tag")),
+		mcp.WithString("size", mcp.Description("new PVC size (grow only)")),
+		mcp.WithNumber("port", mcp.Description("new port")),
+		mcp.WithString("resources", mcp.Description(`JSON, e.g. {"requests":{"cpu":"100m"}}`)),
+		mcp.WithIdempotentHintAnnotation(true), nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			var body apitypes.AddonCreateRequest
+			body.Version = arg(req, "version")
+			body.Size = arg(req, "size")
+			if p := req.GetInt("port", 0); p > 0 {
+				body.Port = &p
+			}
+			rs, err := jsonArg[apitypes.ResourceSpec](req, "resources")
+			if err != nil {
+				return errResult(err), nil
+			}
+			body.Resources = rs
+			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/addons/%s", arg(req, "project"), arg(req, "addon")), body)
 		})
 
 	s.AddTool(mcp.NewTool("naru_delete_addon",

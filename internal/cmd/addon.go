@@ -16,7 +16,7 @@ func addonPath(project, addon string) string {
 
 func newAddonCmd() *cobra.Command {
 	c := &cobra.Command{Use: "addon", Short: "Manage addons (databases/caches)"}
-	c.AddCommand(addonListCmd(), addonCreateCmd(), addonGetCmd(), addonRmCmd(), addonConnCmd(), addonTunnelCmd())
+	c.AddCommand(addonListCmd(), addonCreateCmd(), addonSetCmd(), addonGetCmd(), addonRmCmd(), addonConnCmd(), addonTunnelCmd())
 	return c
 }
 
@@ -44,7 +44,8 @@ func addonListCmd() *cobra.Command {
 }
 
 func addonCreateCmd() *cobra.Command {
-	var typ, version, size string
+	var typ, version, size, file string
+	var cpuReq, memReq, cpuLim, memLim string
 	var port int
 	c := &cobra.Command{
 		Use: "create <name>", Short: "Create an addon", Args: cobra.ExactArgs(1),
@@ -53,9 +54,30 @@ func addonCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := apitypes.AddonCreateRequest{Name: args[0], Type: typ, Version: version, Size: size}
+			var req apitypes.AddonCreateRequest
+			if file != "" {
+				if err := loadSpecFile(file, &req); err != nil {
+					return err
+				}
+			}
+			req.Name = args[0]
+			if typ != "" {
+				req.Type = typ
+			}
+			if version != "" {
+				req.Version = version
+			}
+			if size != "" {
+				req.Size = size
+			}
+			if req.Size == "" {
+				req.Size = "1Gi" // preserve the historic default
+			}
 			if port > 0 {
 				req.Port = &port
+			}
+			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
+				req.Resources = rs
 			}
 			var out apitypes.AddonSpec
 			if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/addons", req, &out); err != nil {
@@ -65,12 +87,57 @@ func addonCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&typ, "type", "", "mysql|postgres|mongo|redis (required)")
-	c.Flags().StringVar(&version, "version", "", "image version (required)")
-	c.Flags().StringVar(&size, "size", "1Gi", "storage size")
+	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
+	c.Flags().StringVar(&typ, "type", "", "mysql|postgres|mongo|redis (required unless -f)")
+	c.Flags().StringVar(&version, "version", "", "image version (required unless -f)")
+	c.Flags().StringVar(&size, "size", "", "storage size (default: 1Gi)")
 	c.Flags().IntVar(&port, "port", 0, "port (default: type default)")
-	_ = c.MarkFlagRequired("type")
-	_ = c.MarkFlagRequired("version")
+	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
+	return c
+}
+
+func addonSetCmd() *cobra.Command {
+	var version, size, file string
+	var cpuReq, memReq, cpuLim, memLim string
+	var port int
+	c := &cobra.Command{
+		Use: "set <name>", Short: "Update an addon (version/size/port/resources; type is immutable)", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			var req apitypes.AddonCreateRequest
+			if file != "" {
+				if err := loadSpecFile(file, &req); err != nil {
+					return err
+				}
+			}
+			if version != "" {
+				req.Version = version
+			}
+			if size != "" {
+				req.Size = size
+			}
+			if port > 0 {
+				req.Port = &port
+			}
+			if rs := resourceFromFlags(cpuReq, memReq, cpuLim, memLim); rs != nil {
+				req.Resources = rs
+			}
+			var out apitypes.AddonSpec
+			if err := cl.Patch(cmd.Context(), addonPath(project, args[0]), req, &out); err != nil {
+				return err
+			}
+			output.Success("updated addon " + args[0])
+			return nil
+		},
+	}
+	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON) for full-schema fields")
+	c.Flags().StringVar(&version, "version", "", "image version")
+	c.Flags().StringVar(&size, "size", "", "storage size")
+	c.Flags().IntVar(&port, "port", 0, "port")
+	addResourceFlags(c, &cpuReq, &memReq, &cpuLim, &memLim)
 	return c
 }
 
