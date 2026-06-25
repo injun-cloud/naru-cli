@@ -17,7 +17,7 @@ import (
 )
 
 func appPath(project, app string) string {
-	return fmt.Sprintf("/v1/projects/%s/apps/%s", project, app)
+	return fmt.Sprintf("/v1/projects/%s/apps/%s", url.PathEscape(project), url.PathEscape(app))
 }
 
 func newAppCmd() *cobra.Command {
@@ -55,7 +55,7 @@ func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apity
 		return "", err
 	}
 	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-	if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/apps", req, &out); err != nil {
+	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/apps", req, &out); err != nil {
 		return "", err
 	}
 	return "created", nil
@@ -70,7 +70,7 @@ func appListCmd() *cobra.Command {
 				return err
 			}
 			var apps []apitypes.AppSpec
-			if err := cl.Get(cmd.Context(), "/v1/projects/"+project+"/apps", &apps); err != nil {
+			if err := cl.Get(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/apps", &apps); err != nil {
 				return err
 			}
 			return printer().Emit(apps, func() {
@@ -343,10 +343,10 @@ func appBuildsCmd() *cobra.Command {
 			}
 			if len(args) == 2 {
 				if follow {
-					return cl.Stream(cmd.Context(), appPath(project, args[0])+"/builds/"+args[1]+"/logs?follow=true", func(l string) { fmt.Println(l) })
+					return cl.Stream(cmd.Context(), appPath(project, args[0])+"/builds/"+url.PathEscape(args[1])+"/logs?follow=true", func(l string) { fmt.Println(l) })
 				}
 				var b apitypes.BuildInfo
-				if err := cl.Get(cmd.Context(), appPath(project, args[0])+"/builds/"+args[1], &b); err != nil {
+				if err := cl.Get(cmd.Context(), appPath(project, args[0])+"/builds/"+url.PathEscape(args[1]), &b); err != nil {
 					return err
 				}
 				return printer().Emit(b, func() { fmt.Printf("%s  %s  %s\n", b.ID, b.Phase, b.Message) })

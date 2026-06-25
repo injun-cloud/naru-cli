@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -132,12 +133,19 @@ func scalarVars(req mcp.CallToolRequest) (map[string]string, error) {
 	return out, nil
 }
 
+// projApp / projAddon return URL-escaped, path-safe segments so a stray
+// '?'/'#'/'/' in a name cannot corrupt the request path.
 func projApp(req mcp.CallToolRequest) (string, string) {
-	return arg(req, "project"), arg(req, "app")
+	return url.PathEscape(arg(req, "project")), url.PathEscape(arg(req, "app"))
 }
 
 func projAddon(req mcp.CallToolRequest) (string, string) {
-	return arg(req, "project"), arg(req, "addon")
+	return url.PathEscape(arg(req, "project")), url.PathEscape(arg(req, "addon"))
+}
+
+// projAPI is the escaped base path for a project.
+func projAPI(req mcp.CallToolRequest) string {
+	return "/v1/projects/" + url.PathEscape(arg(req, "project"))
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -186,7 +194,7 @@ func upsertApp(ctx context.Context, cl *client.Client, project string, spec apit
 	if spec.Git.Branch == "" {
 		spec.Git.Branch = "main"
 	}
-	path := fmt.Sprintf("/v1/projects/%s/apps/%s", project, spec.Name)
+	path := fmt.Sprintf("/v1/projects/%s/apps/%s", url.PathEscape(project), url.PathEscape(spec.Name))
 	var out apitypes.AppSpec
 	if err := cl.Get(ctx, path, &apitypes.AppSpec{}); err == nil {
 		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
@@ -195,7 +203,7 @@ func upsertApp(ctx context.Context, cl *client.Client, project string, spec apit
 		return "", err
 	}
 	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-	return "created", cl.Post(ctx, "/v1/projects/"+project+"/apps", req, &out)
+	return "created", cl.Post(ctx, "/v1/projects/"+url.PathEscape(project)+"/apps", req, &out)
 }
 
 // upsertAddon creates the addon if absent, else replaces it (type immutable).
@@ -210,14 +218,14 @@ func upsertAddon(ctx context.Context, cl *client.Client, project string, spec ap
 	if spec.Port > 0 {
 		req.Port = &spec.Port
 	}
-	path := fmt.Sprintf("/v1/projects/%s/addons/%s", project, spec.Name)
+	path := fmt.Sprintf("/v1/projects/%s/addons/%s", url.PathEscape(project), url.PathEscape(spec.Name))
 	var out apitypes.AddonSpec
 	if err := cl.Get(ctx, path, &apitypes.AddonSpec{}); err == nil {
 		return "updated", cl.Put(ctx, path, req, &out)
 	} else if !client.NotFound(err) {
 		return "", err
 	}
-	return "created", cl.Post(ctx, "/v1/projects/"+project+"/addons", req, &out)
+	return "created", cl.Post(ctx, "/v1/projects/"+url.PathEscape(project)+"/addons", req, &out)
 }
 
 func register(s *mcpserver.MCPServer) {
@@ -255,7 +263,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Get one project's full spec (owners, applications, addons)."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("project name")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[apitypes.ProjectSpec](ctx, "/v1/projects/"+arg(req, "project"))
+			return getInto[apitypes.ProjectSpec](ctx, projAPI(req))
 		})
 
 	s.AddTool(mcp.NewTool("create_project",
@@ -270,7 +278,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Delete a project and purge its app secrets from Vault. Irreversible."),
 		mcp.WithString("project", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return write(ctx, "DELETE", "/v1/projects/"+arg(req, "project"), nil)
+			return write(ctx, "DELETE", projAPI(req), nil)
 		})
 
 	// --- members (per-project owners) ---
@@ -279,7 +287,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("List a project's owners (GitHub ID + username)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[apitypes.MembersResponse](ctx, "/v1/projects/"+arg(req, "project")+"/members")
+			return getInto[apitypes.MembersResponse](ctx, projAPI(req)+"/members")
 		})
 
 	s.AddTool(mcp.NewTool("add_member",
@@ -288,7 +296,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("username", mcp.Required(), mcp.Description("GitHub login to add as owner")), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return write(ctx, "POST", "/v1/projects/"+arg(req, "project")+"/members",
+			return write(ctx, "POST", projAPI(req)+"/members",
 				apitypes.AddMemberRequest{Username: arg(req, "username")})
 		})
 
@@ -297,7 +305,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("username", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return write(ctx, "DELETE", "/v1/projects/"+arg(req, "project")+"/members/"+arg(req, "username"), nil)
+			return write(ctx, "DELETE", projAPI(req)+"/members/"+url.PathEscape(arg(req, "username")), nil)
 		})
 
 	// --- applications ---
@@ -306,7 +314,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("List the applications in a project."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[[]apitypes.AppSpec](ctx, "/v1/projects/"+arg(req, "project")+"/apps")
+			return getInto[[]apitypes.AppSpec](ctx, projAPI(req)+"/apps")
 		})
 
 	s.AddTool(mcp.NewTool("get_app",
@@ -398,7 +406,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("build", mcp.Required(), mcp.Description("build id from list_builds")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs?follow=false", p, a, arg(req, "build")))
+			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs?follow=false", p, a, url.PathEscape(arg(req, "build"))))
 		})
 
 	// --- secrets ---
@@ -434,7 +442,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("key", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets/%s", p, a, arg(req, "key")), nil)
+			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets/%s", p, a, url.PathEscape(arg(req, "key"))), nil)
 		})
 
 	// --- addons ---
@@ -443,7 +451,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("List a project's addons (databases/caches)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[[]apitypes.AddonSpec](ctx, "/v1/projects/"+arg(req, "project")+"/addons")
+			return getInto[[]apitypes.AddonSpec](ctx, projAPI(req)+"/addons")
 		})
 
 	s.AddTool(mcp.NewTool("get_addon",
@@ -512,7 +520,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/addons/%s", arg(req, "project"), arg(req, "addon")), nil)
+			return write(ctx, "DELETE", fmt.Sprintf("/v1/projects/%s/addons/%s", url.PathEscape(arg(req, "project")), url.PathEscape(arg(req, "addon"))), nil)
 		})
 
 	// --- endpoints (routing overview) ---
@@ -521,6 +529,6 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("List a project's external routes (host → app:port)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[apitypes.EndpointsResponse](ctx, "/v1/projects/"+arg(req, "project")+"/endpoints")
+			return getInto[apitypes.EndpointsResponse](ctx, projAPI(req)+"/endpoints")
 		})
 }
