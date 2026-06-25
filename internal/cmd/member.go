@@ -40,7 +40,7 @@ func newMemberCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				var out apitypes.MemberDTO
+				var out apitypes.MemberInfo
 				if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/members", apitypes.AddMemberRequest{Username: args[0]}, &out); err != nil {
 					return err
 				}

@@ -329,7 +329,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("app", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			return getInto[apitypes.StatusDTO](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/status", p, a))
+			return getInto[apitypes.StatusInfo](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/status", p, a))
 		})
 
 	s.AddTool(mcp.NewTool("naru_deploy_app",
@@ -431,7 +431,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAddon(req)
-			return getInto[apitypes.StatusDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/status", p, a))
+			return getInto[apitypes.StatusInfo](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/status", p, a))
 		})
 
 	s.AddTool(mcp.NewTool("naru_get_addon_logs",
@@ -450,7 +450,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAddon(req)
-			return getInto[apitypes.ConnectionDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", p, a))
+			return getInto[apitypes.ConnectionInfo](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", p, a))
 		})
 
 	applyAddon := mcp.NewToolWithRawSchema("naru_apply_addon",

@@ -234,7 +234,7 @@ func addonConnCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var dto apitypes.ConnectionDTO
+			var dto apitypes.ConnectionInfo
 			if err := cl.Get(cmd.Context(), addonPath(project, args[0])+"/connection", &dto); err != nil {
 				return err
 			}
@@ -257,7 +257,7 @@ func addonStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var st apitypes.StatusDTO
+			var st apitypes.StatusInfo
 			if err := cl.Get(cmd.Context(), addonPath(project, args[0])+"/status", &st); err != nil {
 				return err
 			}

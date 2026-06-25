@@ -257,7 +257,7 @@ func appStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var st apitypes.StatusDTO
+			var st apitypes.StatusInfo
 			if err := cl.Get(cmd.Context(), appPath(project, args[0])+"/status", &st); err != nil {
 				return err
 			}
