@@ -201,13 +201,13 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- identity / discovery (read-only) ---
 
-	s.AddTool(mcp.NewTool("naru_whoami",
+	s.AddTool(mcp.NewTool("whoami",
 		mcp.WithDescription("Return the authenticated user's GitHub ID and username."), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[apitypes.MeResponse](ctx, "/v1/auth/me")
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_schema",
+	s.AddTool(mcp.NewTool("get_schema",
 		mcp.WithDescription("Return the project-YAML JSON schema and its version (field reference for create/update)."), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[apitypes.SchemaResponse](ctx, "/v1/schema")
@@ -215,20 +215,20 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- projects ---
 
-	s.AddTool(mcp.NewTool("naru_list_projects",
+	s.AddTool(mcp.NewTool("list_projects",
 		mcp.WithDescription("List the Naru projects the caller owns (admins see all)."), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[[]apitypes.ProjectSummary](ctx, "/v1/projects")
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_project",
+	s.AddTool(mcp.NewTool("get_project",
 		mcp.WithDescription("Get one project's full spec (owners, applications, addons)."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("project name")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[apitypes.ProjectSpec](ctx, "/v1/projects/"+arg(req, "project"))
 		})
 
-	s.AddTool(mcp.NewTool("naru_create_project",
+	s.AddTool(mcp.NewTool("create_project",
 		mcp.WithDescription("Create an empty project. The caller becomes its first owner. "+
 			"Name: lowercase letters, digits and hyphens; 2-63 chars."),
 		mcp.WithString("name", mcp.Required(), mcp.Description("project name")), nd),
@@ -236,7 +236,7 @@ func register(s *mcpserver.MCPServer) {
 			return write(ctx, "POST", "/v1/projects", apitypes.ProjectCreateRequest{Name: arg(req, "name")})
 		})
 
-	s.AddTool(mcp.NewTool("naru_delete_project",
+	s.AddTool(mcp.NewTool("delete_project",
 		mcp.WithDescription("Delete a project and purge its app secrets from Vault. Irreversible."),
 		mcp.WithString("project", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -245,14 +245,14 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- members (per-project owners) ---
 
-	s.AddTool(mcp.NewTool("naru_list_members",
+	s.AddTool(mcp.NewTool("list_members",
 		mcp.WithDescription("List a project's owners (GitHub ID + username)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[apitypes.MembersResponse](ctx, "/v1/projects/"+arg(req, "project")+"/members")
 		})
 
-	s.AddTool(mcp.NewTool("naru_add_member",
+	s.AddTool(mcp.NewTool("add_member",
 		mcp.WithDescription("Add a GitHub user as a project owner (by username). "+
 			"Note: ownership is separate from the platform allowlist — the user must also be allowlisted to log in."),
 		mcp.WithString("project", mcp.Required()),
@@ -262,7 +262,7 @@ func register(s *mcpserver.MCPServer) {
 				apitypes.AddMemberRequest{Username: arg(req, "username")})
 		})
 
-	s.AddTool(mcp.NewTool("naru_remove_member",
+	s.AddTool(mcp.NewTool("remove_member",
 		mcp.WithDescription("Remove an owner from a project (by username). The last owner cannot be removed."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("username", mcp.Required()), del),
@@ -272,14 +272,14 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- applications ---
 
-	s.AddTool(mcp.NewTool("naru_list_apps",
+	s.AddTool(mcp.NewTool("list_apps",
 		mcp.WithDescription("List the applications in a project."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[[]apitypes.AppSpec](ctx, "/v1/projects/"+arg(req, "project")+"/apps")
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_app",
+	s.AddTool(mcp.NewTool("get_app",
 		mcp.WithDescription("Get one application's spec."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
@@ -288,10 +288,10 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.AppSpec](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s", p, a))
 		})
 
-	applyApp := mcp.NewToolWithRawSchema("naru_apply_app",
+	applyApp := mcp.NewToolWithRawSchema("apply_app",
 		"Create or update an application (declarative upsert). `spec` is the full app "+
 			"spec (name, git, replicas, resources, rollout, endpoints) — its fields match "+
-			"`naru_get_schema`. The repo must have the Naru GitHub App installed. The CI-owned "+
+			"`get_schema`. The repo must have the Naru GitHub App installed. The CI-owned "+
 			"git hash is preserved; a normal push deploys automatically (no separate deploy needed).",
 		applyToolSchema("applications"))
 	applyApp.Annotations.DestructiveHint = ptr(false)
@@ -312,7 +312,7 @@ func register(s *mcpserver.MCPServer) {
 		return mcp.NewToolResultText(action + " app " + spec.Name), nil
 	})
 
-	s.AddTool(mcp.NewTool("naru_delete_app",
+	s.AddTool(mcp.NewTool("delete_app",
 		mcp.WithDescription("Delete an application and purge its secrets from Vault. Irreversible."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), del),
@@ -323,7 +323,7 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- status / deploy / logs / builds ---
 
-	s.AddTool(mcp.NewTool("naru_get_app_status",
+	s.AddTool(mcp.NewTool("get_app_status",
 		mcp.WithDescription("Get an app's live deployment status (phase, replicas, image, pods)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
@@ -332,7 +332,7 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.StatusInfo](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/status", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_deploy_app",
+	s.AddTool(mcp.NewTool("deploy_app",
 		mcp.WithDescription("Trigger a build/deploy for an app. Only needed for the first build or a re-deploy "+
 			"without a code change — a normal git push deploys automatically."),
 		mcp.WithString("project", mcp.Required()),
@@ -342,7 +342,7 @@ func register(s *mcpserver.MCPServer) {
 			return write(ctx, "POST", fmt.Sprintf("/v1/projects/%s/apps/%s/deploy", p, a), nil)
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_app_logs",
+	s.AddTool(mcp.NewTool("get_app_logs",
 		mcp.WithDescription("Get an app's recent runtime logs (bounded tail, not streaming)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
@@ -352,7 +352,7 @@ func register(s *mcpserver.MCPServer) {
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/logs?follow=false&tail=%d", p, a, req.GetInt("tail", 200)))
 		})
 
-	s.AddTool(mcp.NewTool("naru_list_builds",
+	s.AddTool(mcp.NewTool("list_builds",
 		mcp.WithDescription("List recent CI builds for an app."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
@@ -361,11 +361,11 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[[]apitypes.BuildInfo](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_build_logs",
-		mcp.WithDescription("Get a build's logs (bounded). Use naru_list_builds to find the build id."),
+	s.AddTool(mcp.NewTool("get_build_logs",
+		mcp.WithDescription("Get a build's logs (bounded). Use list_builds to find the build id."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
-		mcp.WithString("build", mcp.Required(), mcp.Description("build id from naru_list_builds")), ro, nd),
+		mcp.WithString("build", mcp.Required(), mcp.Description("build id from list_builds")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs?follow=false", p, a, arg(req, "build")))
@@ -373,7 +373,7 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- secrets ---
 
-	s.AddTool(mcp.NewTool("naru_list_secrets",
+	s.AddTool(mcp.NewTool("list_secrets",
 		mcp.WithDescription("List an app's secret KEYS (values are never returned)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
@@ -382,7 +382,7 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.SecretKeys](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_set_secret",
+	s.AddTool(mcp.NewTool("set_secret",
 		mcp.WithDescription("Set (merge) secrets on an app. They become environment variables; takes effect on the next sync/rollout."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
@@ -397,7 +397,7 @@ func register(s *mcpserver.MCPServer) {
 			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a), apitypes.SecretVars{Vars: vars})
 		})
 
-	s.AddTool(mcp.NewTool("naru_delete_secret",
+	s.AddTool(mcp.NewTool("delete_secret",
 		mcp.WithDescription("Delete one secret key from an app."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
@@ -409,14 +409,14 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- addons ---
 
-	s.AddTool(mcp.NewTool("naru_list_addons",
+	s.AddTool(mcp.NewTool("list_addons",
 		mcp.WithDescription("List a project's addons (databases/caches)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return getInto[[]apitypes.AddonSpec](ctx, "/v1/projects/"+arg(req, "project")+"/addons")
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_addon",
+	s.AddTool(mcp.NewTool("get_addon",
 		mcp.WithDescription("Get one addon's spec (type, version, size, port)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
@@ -425,7 +425,7 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.AddonSpec](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_addon_status",
+	s.AddTool(mcp.NewTool("get_addon_status",
 		mcp.WithDescription("Get an addon's live deployment status (phase, replicas, image, pods)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
@@ -434,7 +434,7 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.StatusInfo](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/status", p, a))
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_addon_logs",
+	s.AddTool(mcp.NewTool("get_addon_logs",
 		mcp.WithDescription("Get an addon's recent logs (bounded tail, not streaming)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()),
@@ -444,8 +444,8 @@ func register(s *mcpserver.MCPServer) {
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/logs?follow=false&tail=%d", p, a, req.GetInt("tail", 200)))
 		})
 
-	s.AddTool(mcp.NewTool("naru_get_addon_connection",
-		mcp.WithDescription("Get an addon's full connection incl. password (the addon's secret). Fetch this and write the values into an app's secret with naru_set_secret, under whatever key names the app expects."),
+	s.AddTool(mcp.NewTool("get_addon_connection",
+		mcp.WithDescription("Get an addon's full connection incl. password (the addon's secret). Fetch this and write the values into an app's secret with set_secret, under whatever key names the app expects."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -453,11 +453,11 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.ConnectionInfo](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", p, a))
 		})
 
-	applyAddon := mcp.NewToolWithRawSchema("naru_apply_addon",
+	applyAddon := mcp.NewToolWithRawSchema("apply_addon",
 		"Create or update an addon (declarative upsert). `spec` is the full addon spec "+
-			"(name, type, version, size, port, resources) — fields match `naru_get_schema`. The "+
+			"(name, type, version, size, port, resources) — fields match `get_schema`. The "+
 			"addon type is immutable. A random password is generated into Vault; reach the addon "+
-			"by its name as hostname and wire an app to it with naru_set_secret (env var names are your choice).",
+			"by its name as hostname and wire an app to it with set_secret (env var names are your choice).",
 		applyToolSchema("addons"))
 	applyAddon.Annotations.DestructiveHint = ptr(false)
 	applyAddon.Annotations.IdempotentHint = ptr(true)
@@ -477,7 +477,7 @@ func register(s *mcpserver.MCPServer) {
 		return mcp.NewToolResultText(action + " addon " + spec.Name), nil
 	})
 
-	s.AddTool(mcp.NewTool("naru_delete_addon",
+	s.AddTool(mcp.NewTool("delete_addon",
 		mcp.WithDescription("Delete an addon and its data volume. Irreversible."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), del),
@@ -487,7 +487,7 @@ func register(s *mcpserver.MCPServer) {
 
 	// --- endpoints (routing overview) ---
 
-	s.AddTool(mcp.NewTool("naru_list_endpoints",
+	s.AddTool(mcp.NewTool("list_endpoints",
 		mcp.WithDescription("List a project's external routes (host → app:port)."),
 		mcp.WithString("project", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
