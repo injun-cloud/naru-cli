@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -273,6 +274,19 @@ func appStatusCmd() *cobra.Command {
 	}
 }
 
+// logQuery builds the query string for a log stream, URL-escaping the optional
+// container so a value containing & or # cannot corrupt or inject query params.
+func logQuery(follow bool, tail, since int, container string) string {
+	q := url.Values{}
+	q.Set("follow", strconv.FormatBool(follow))
+	q.Set("tail", strconv.Itoa(tail))
+	q.Set("since", strconv.Itoa(since))
+	if container != "" {
+		q.Set("container", container)
+	}
+	return "?" + q.Encode()
+}
+
 func appLogsCmd() *cobra.Command {
 	var follow bool
 	var tail, since int
@@ -285,8 +299,7 @@ func appLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			q := fmt.Sprintf("?follow=%t&tail=%d&since=%d&container=%s", follow, tail, since, container)
-			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+q, func(line string) {
+			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container), func(line string) {
 				fmt.Println(line)
 			})
 		},

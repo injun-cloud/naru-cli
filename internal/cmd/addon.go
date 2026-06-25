@@ -285,8 +285,7 @@ func addonLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			q := fmt.Sprintf("?follow=%t&tail=%d&since=%d&container=%s", follow, tail, since, container)
-			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+q, func(line string) {
+			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container), func(line string) {
 				fmt.Println(line)
 			})
 		},
