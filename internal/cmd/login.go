@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -57,6 +58,9 @@ func newLoginCmd() *cobra.Command {
 // receiveOAuthCode runs a loopback callback server and returns the OAuth code.
 // The CLI owns the CSRF state and the redirect, keeping the server stateless.
 func receiveOAuthCode(ctx context.Context, clientID string) (string, error) {
+	// Don't wait forever if the user never completes (or never opens) the flow.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
@@ -89,6 +93,11 @@ func receiveOAuthCode(ctx context.Context, clientID string) (string, error) {
 		}
 		code := r.URL.Query().Get("code")
 		if code == "" {
+			if e := r.URL.Query().Get("error"); e != "" {
+				http.Error(w, "authorization failed: "+e, http.StatusBadRequest)
+				errCh <- fmt.Errorf("authorization failed: %s", e)
+				return
+			}
 			http.Error(w, "no code", http.StatusBadRequest)
 			errCh <- fmt.Errorf("no code in callback")
 			return
@@ -101,6 +110,9 @@ func receiveOAuthCode(ctx context.Context, clientID string) (string, error) {
 
 	select {
 	case <-ctx.Done():
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("timed out waiting for authorization (5m)")
+		}
 		return "", ctx.Err()
 	case err := <-errCh:
 		return "", err
