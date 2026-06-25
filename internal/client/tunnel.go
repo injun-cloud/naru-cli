@@ -3,10 +3,11 @@ package client
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -49,6 +50,10 @@ func (c *Client) RunTunnel(ctx context.Context, path, localAddr string, onListen
 	}
 }
 
+// dialErrSeen de-dupes tunnel dial failure messages so a connection storm
+// reports each distinct cause once instead of spamming stderr.
+var dialErrSeen sync.Map
+
 func (c *Client) handleTunnelConn(ctx context.Context, path string, tcp net.Conn) {
 	defer tcp.Close()
 	hdr := http.Header{}
@@ -57,9 +62,7 @@ func (c *Client) handleTunnelConn(ctx context.Context, path string, tcp net.Conn
 	}
 	ws, resp, err := websocket.DefaultDialer.DialContext(ctx, c.wsURL(path), hdr)
 	if err != nil {
-		if resp != nil {
-			fmt.Fprintf(io.Discard, "tunnel dial %d\n", resp.StatusCode)
-		}
+		reportTunnelDialError(resp, err)
 		return
 	}
 	defer ws.Close()
@@ -95,4 +98,26 @@ func (c *Client) handleTunnelConn(ctx context.Context, path string, tcp net.Conn
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+// reportTunnelDialError prints one de-duped, status-aware message per dial failure.
+func reportTunnelDialError(resp *http.Response, err error) {
+	var key, msg string
+	switch {
+	case resp == nil:
+		key = "no-response"
+		msg = fmt.Sprintf("tunnel dial failed: %v (server unreachable)", err)
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		key = fmt.Sprintf("status-%d", resp.StatusCode)
+		msg = fmt.Sprintf("tunnel dial failed: HTTP %d (authentication denied — check your token/access)", resp.StatusCode)
+	case resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable:
+		key = fmt.Sprintf("status-%d", resp.StatusCode)
+		msg = fmt.Sprintf("tunnel dial failed: HTTP %d (target unreachable — app may be down or has no listening port)", resp.StatusCode)
+	default:
+		key = fmt.Sprintf("status-%d", resp.StatusCode)
+		msg = fmt.Sprintf("tunnel dial failed: HTTP %d", resp.StatusCode)
+	}
+	if _, seen := dialErrSeen.LoadOrStore(key, true); !seen {
+		fmt.Fprintln(os.Stderr, "✗ "+msg)
+	}
 }
