@@ -106,6 +106,10 @@ func projApp(req mcp.CallToolRequest) (string, string) {
 	return arg(req, "project"), arg(req, "app")
 }
 
+func projAddon(req mcp.CallToolRequest) (string, string) {
+	return arg(req, "project"), arg(req, "addon")
+}
+
 func ptr[T any](v T) *T { return &v }
 
 // applyToolSchema builds an apply tool's input schema: {project, spec} where the
@@ -412,12 +416,41 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[[]apitypes.AddonSpec](ctx, "/v1/projects/"+arg(req, "project")+"/addons")
 		})
 
+	s.AddTool(mcp.NewTool("naru_get_addon",
+		mcp.WithDescription("Get one addon's spec (type, version, size, port)."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("addon", mcp.Required()), ro, nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			p, a := projAddon(req)
+			return getInto[apitypes.AddonSpec](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s", p, a))
+		})
+
+	s.AddTool(mcp.NewTool("naru_get_addon_status",
+		mcp.WithDescription("Get an addon's live deployment status (phase, replicas, image, pods)."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("addon", mcp.Required()), ro, nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			p, a := projAddon(req)
+			return getInto[apitypes.StatusDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/status", p, a))
+		})
+
+	s.AddTool(mcp.NewTool("naru_get_addon_logs",
+		mcp.WithDescription("Get an addon's recent logs (bounded tail, not streaming)."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("addon", mcp.Required()),
+		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")), ro, nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			p, a := projAddon(req)
+			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/logs?follow=false&tail=%d", p, a, req.GetInt("tail", 200)))
+		})
+
 	s.AddTool(mcp.NewTool("naru_get_addon_connection",
 		mcp.WithDescription("Get an addon's full connection incl. password (the addon's secret). Fetch this and write the values into an app's secret with naru_set_secret, under whatever key names the app expects."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[apitypes.ConnectionDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", arg(req, "project"), arg(req, "addon")))
+			p, a := projAddon(req)
+			return getInto[apitypes.ConnectionDTO](ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/connection", p, a))
 		})
 
 	applyAddon := mcp.NewToolWithRawSchema("naru_apply_addon",

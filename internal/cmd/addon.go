@@ -17,7 +17,7 @@ func addonPath(project, addon string) string {
 
 func newAddonCmd() *cobra.Command {
 	c := &cobra.Command{Use: "addon", Short: "Manage addons (databases/caches)"}
-	c.AddCommand(addonListCmd(), addonCreateCmd(), addonGetCmd(), addonEditCmd(), addonApplyCmd(), addonRmCmd(), addonConnCmd(), addonTunnelCmd())
+	c.AddCommand(addonListCmd(), addonCreateCmd(), addonGetCmd(), addonEditCmd(), addonApplyCmd(), addonRmCmd(), addonStatusCmd(), addonLogsCmd(), addonConnCmd(), addonTunnelCmd())
 	return c
 }
 
@@ -247,6 +247,55 @@ func addonConnCmd() *cobra.Command {
 			})
 		},
 	}
+}
+
+func addonStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "status <name>", Short: "Show the addon's deployment status", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			var st apitypes.StatusDTO
+			if err := cl.Get(cmd.Context(), addonPath(project, args[0])+"/status", &st); err != nil {
+				return err
+			}
+			return printer().Emit(st, func() {
+				fmt.Printf("phase: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
+				rows := make([][]string, 0, len(st.Pods))
+				for _, p := range st.Pods {
+					rows = append(rows, []string{p.Name, p.Phase, strconv.FormatBool(p.Ready), strconv.Itoa(p.Restarts), p.Reason})
+				}
+				output.Table([]string{"POD", "PHASE", "READY", "RESTARTS", "REASON"}, rows)
+			})
+		},
+	}
+}
+
+func addonLogsCmd() *cobra.Command {
+	var follow bool
+	var tail, since int
+	var container string
+	c := &cobra.Command{
+		Use: "logs <name>", Short: "Stream addon logs", Args: cobra.ExactArgs(1),
+		Example: "  naru addon logs db -p myproj --tail 200\n  naru addon logs db -f   # follow",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			q := fmt.Sprintf("?follow=%t&tail=%d&since=%d&container=%s", follow, tail, since, container)
+			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+q, func(line string) {
+				fmt.Println(line)
+			})
+		},
+	}
+	c.Flags().BoolVarP(&follow, "follow", "f", false, "follow")
+	c.Flags().IntVar(&tail, "tail", 100, "lines from the end")
+	c.Flags().IntVar(&since, "since", 0, "seconds of history")
+	c.Flags().StringVar(&container, "container", "", "container name")
+	return c
 }
 
 func addonTunnelCmd() *cobra.Command {
