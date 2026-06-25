@@ -268,7 +268,7 @@ func register(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcp.NewTool("create_project",
 		mcp.WithDescription("Create an empty project. The caller becomes its first owner. "+
-			"Name: lowercase letters, digits and hyphens; 2-63 chars."),
+			"Name: lowercase letters and digits only (no hyphens); 2-63 chars."),
 		mcp.WithString("name", mcp.Required(), mcp.Description("project name")), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return write(ctx, "POST", "/v1/projects", apitypes.ProjectCreateRequest{Name: arg(req, "name")})
