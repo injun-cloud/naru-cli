@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -20,7 +21,10 @@ import (
 
 // Serve starts the stdio MCP server.
 func Serve(version string) error {
-	s := mcpserver.NewMCPServer("naru", version)
+	// WithInputSchemaValidation enforces each tool's declared required args and
+	// types before the handler runs, so a missing/wrong-typed arg returns a clean
+	// validation error to the agent instead of a malformed request or a panic.
+	s := mcpserver.NewMCPServer("naru", version, mcpserver.WithInputSchemaValidation())
 	register(s)
 	return mcpserver.ServeStdio(s)
 }
@@ -101,6 +105,32 @@ func collectLogs(ctx context.Context, path string) (*mcp.CallToolResult, error) 
 }
 
 func arg(req mcp.CallToolRequest, k string) string { return req.GetString(k, "") }
+
+// scalarVars converts the MCP "vars" argument into string secret values. It
+// rejects a missing/non-object argument or any non-scalar value (object, array,
+// null) so a structured value is never silently formatted into a garbage secret.
+func scalarVars(req mcp.CallToolRequest) (map[string]string, error) {
+	raw, ok := req.GetArguments()["vars"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'vars' must be an object mapping each KEY to a string value")
+	}
+	out := make(map[string]string, len(raw))
+	for k, v := range raw {
+		switch t := v.(type) {
+		case string:
+			out[k] = t
+		case bool:
+			out[k] = strconv.FormatBool(t)
+		case float64:
+			out[k] = strconv.FormatFloat(t, 'f', -1, 64)
+		case json.Number:
+			out[k] = t.String()
+		default:
+			return nil, fmt.Errorf("value for %q must be a string, number, or boolean", k)
+		}
+	}
+	return out, nil
+}
 
 func projApp(req mcp.CallToolRequest) (string, string) {
 	return arg(req, "project"), arg(req, "app")
@@ -390,9 +420,9 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithIdempotentHintAnnotation(true), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			vars := map[string]string{}
-			for k, v := range req.GetArguments()["vars"].(map[string]any) {
-				vars[k] = fmt.Sprint(v)
+			vars, err := scalarVars(req)
+			if err != nil {
+				return errResult(err), nil
 			}
 			return write(ctx, "PATCH", fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a), apitypes.SecretVars{Vars: vars})
 		})
