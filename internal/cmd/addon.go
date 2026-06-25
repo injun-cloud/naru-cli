@@ -229,7 +229,7 @@ func addonRmCmd() *cobra.Command {
 
 func addonConnCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "conn <name>", Short: "Show connection info, including the password", Args: cobra.ExactArgs(1),
+		Use: "conn <name>", Short: "Show connection info (addons are passwordless)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -244,7 +244,11 @@ func addonConnCmd() *cobra.Command {
 				if dto.Username != "" {
 					fmt.Printf("username: %s (default superuser)\n", dto.Username)
 				}
-				fmt.Printf("password: %s\n", dto.Password)
+				if dto.Password != "" {
+					fmt.Printf("password: %s\n", dto.Password)
+				} else {
+					fmt.Println("password: (none — passwordless; set your own via `naru addon tunnel`)")
+				}
 			})
 		},
 	}
