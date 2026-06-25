@@ -61,7 +61,11 @@ type APIError struct {
 func (e *APIError) Error() string {
 	s := e.Msg
 	if e.Hint != "" {
-		s += " (" + e.Hint + ")"
+		if e.Code == apitypes.CodeAppNotInstall {
+			s += "\n\nInstall the Naru GitHub App at: " + e.Hint
+		} else {
+			s += " (" + e.Hint + ")"
+		}
 	}
 	return s
 }
