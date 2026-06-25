@@ -260,10 +260,10 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("get_project",
-		mcp.WithDescription("Get one project's full spec (owners, applications, addons)."),
+		mcp.WithDescription("Get one project (name, applications, addons). Use list_members for owners."),
 		mcp.WithString("project", mcp.Required(), mcp.Description("project name")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			return getInto[apitypes.ProjectSpec](ctx, projAPI(req))
+			return getInto[apitypes.Project](ctx, projAPI(req))
 		})
 
 	s.AddTool(mcp.NewTool("create_project",
