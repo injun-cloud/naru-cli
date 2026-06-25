@@ -126,25 +126,25 @@ func receiveOAuthCode(ctx context.Context, clientID string) (string, error) {
 	}
 }
 
-// writeAuthPage renders the small self-contained HTML page the browser lands on
-// after the OAuth redirect. detail may contain trusted HTML (callers escape any
-// user-controlled value).
+// writeAuthPage renders a minimal self-contained HTML page (matching the
+// platform 404 page's monochrome style) for the OAuth callback landing. detail
+// may contain trusted HTML; callers escape any user-controlled value.
 func writeAuthPage(w http.ResponseWriter, status int, ok bool, heading, detail string) {
-	accent, icon := "#16a34a", "&#10003;" // green check
+	mark := "&#10003;" // check
 	if !ok {
-		accent, icon = "#dc2626", "&#10005;" // red cross
+		mark = "&#10005;" // cross
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Naru &middot; %[3]s</title></head>
-<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0f17;color:#e5e7eb;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
-<div style="text-align:center;padding:44px 52px;background:#111827;border:1px solid #1f2937;border-radius:18px;box-shadow:0 16px 50px rgba(0,0,0,.45);max-width:400px">
-<div style="width:66px;height:66px;margin:0 auto 22px;border-radius:50%%;background:%[1]s;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff">%[2]s</div>
-<div style="font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#6b7280;margin-bottom:8px">naru</div>
-<h1 style="font-size:21px;margin:0 0 10px;font-weight:600">%[3]s</h1>
-<p style="margin:0;color:#9ca3af;font-size:14px;line-height:1.6">%[4]s</p>
-</div></body></html>`, accent, icon, html.EscapeString(heading), detail)
+	fmt.Fprintf(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Naru</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}html,body{height:100%%;background:#fff;color:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}body{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:2rem}.container{max-width:600px}.mark{font-size:5rem;font-weight:200;line-height:1;margin-bottom:1.5rem}.divider{width:60px;height:1px;background:#000;margin:0 auto 1.5rem}.message{font-size:1.25rem;margin-bottom:1rem}.description{font-size:.95rem;color:#666;line-height:1.6}@media(max-width:768px){.mark{font-size:3.5rem}.message{font-size:1.1rem}}</style>
+</head><body><div class="container">
+<div class="mark">%[1]s</div>
+<div class="divider"></div>
+<div class="message">%[2]s</div>
+<div class="description">%[3]s</div>
+</div></body></html>`, mark, html.EscapeString(heading), detail)
 }
 
 func newLogoutCmd() *cobra.Command {
