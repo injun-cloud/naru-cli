@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -98,7 +99,7 @@ func secretRmCmd() *cobra.Command {
 				return err
 			}
 			for _, key := range args[1:] {
-				if err := cl.Delete(cmd.Context(), secretPath(project, args[0])+"/"+key, nil); err != nil {
+				if err := cl.Delete(cmd.Context(), secretPath(project, args[0])+"/"+url.PathEscape(key), nil); err != nil {
 					return err
 				}
 			}
@@ -153,11 +154,16 @@ func parseDotenv(path string) (map[string]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		line = strings.TrimPrefix(line, "export ")
 		k, v, ok := strings.Cut(line, "=")
 		if !ok {
 			continue
 		}
-		out[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+		key := strings.TrimSpace(k)
+		if key == "" || strings.ContainsAny(key, " \t") {
+			continue // skip malformed keys rather than send a garbage secret name
+		}
+		out[key] = strings.Trim(strings.TrimSpace(v), `"'`)
 	}
 	return out, sc.Err()
 }
