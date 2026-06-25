@@ -22,6 +22,19 @@ func newSecretCmd() *cobra.Command {
 	return c
 }
 
+// mergeSecrets PATCHes the given vars onto an app's secret (create-or-merge).
+func mergeSecrets(cmd *cobra.Command, app string, vars map[string]string) error {
+	cl, project, err := clientAndProject()
+	if err != nil {
+		return err
+	}
+	if err := cl.Patch(cmd.Context(), secretPath(project, app), apitypes.SecretVars{Vars: vars}, nil); err != nil {
+		return err
+	}
+	output.Success(fmt.Sprintf("set %d secret(s) on %s", len(vars), app))
+	return nil
+}
+
 func secretLsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "ls <app>", Aliases: []string{"list"}, Short: "List secret keys (values never shown)", Args: cobra.ExactArgs(1),
@@ -44,25 +57,36 @@ func secretLsCmd() *cobra.Command {
 }
 
 func secretSetCmd() *cobra.Command {
-	return &cobra.Command{
-		Use: "set <app> KEY=VALUE...", Short: "Set secrets (merge)", Args: cobra.MinimumNArgs(2),
-		Example: "  naru secret set api DATABASE_URL=postgres://... LOG_LEVEL=info -p myproj",
+	var file string
+	c := &cobra.Command{
+		Use: "set <app> [KEY=VALUE...]", Short: "Set secrets (merge), from args and/or a dotenv file", Args: cobra.MinimumNArgs(1),
+		Example: "  naru secret set api DATABASE_URL=postgres://... LOG_LEVEL=info -p myproj\n" +
+			"  naru secret set api -f .env",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, project, err := clientAndProject()
+			vars := map[string]string{}
+			if file != "" {
+				loaded, err := parseDotenv(file)
+				if err != nil {
+					return err
+				}
+				vars = loaded
+			}
+			// Explicit KEY=VALUE args override file entries.
+			kv, err := parseKV(args[1:])
 			if err != nil {
 				return err
 			}
-			vars, err := parseKV(args[1:])
-			if err != nil {
-				return err
+			for k, v := range kv {
+				vars[k] = v
 			}
-			if err := cl.Patch(cmd.Context(), secretPath(project, args[0]), apitypes.SecretVars{Vars: vars}, nil); err != nil {
-				return err
+			if len(vars) == 0 {
+				return fmt.Errorf("nothing to set: pass KEY=VALUE args or -f <dotenv file>")
 			}
-			output.Success(fmt.Sprintf("set %d secret(s) on %s", len(vars), args[0]))
-			return nil
+			return mergeSecrets(cmd, args[0], vars)
 		},
 	}
+	c.Flags().StringVarP(&file, "file", "f", "", "dotenv file to merge (e.g. .env)")
+	return c
 }
 
 func secretRmCmd() *cobra.Command {
@@ -84,15 +108,12 @@ func secretRmCmd() *cobra.Command {
 	}
 }
 
+// secretLoadCmd is a hidden back-compat alias for "secret set -f".
 func secretLoadCmd() *cobra.Command {
 	var file string
 	c := &cobra.Command{
-		Use: "load <app>", Short: "Load secrets from a .env file (merge)", Args: cobra.ExactArgs(1),
+		Use: "load <app>", Short: "Deprecated: use `secret set <app> -f <file>`", Hidden: true, Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, project, err := clientAndProject()
-			if err != nil {
-				return err
-			}
 			vars, err := parseDotenv(file)
 			if err != nil {
 				return err
@@ -100,11 +121,7 @@ func secretLoadCmd() *cobra.Command {
 			if len(vars) == 0 {
 				return fmt.Errorf("no vars found in %s", file)
 			}
-			if err := cl.Patch(cmd.Context(), secretPath(project, args[0]), apitypes.SecretVars{Vars: vars}, nil); err != nil {
-				return err
-			}
-			output.Success(fmt.Sprintf("loaded %d secret(s) onto %s", len(vars), args[0]))
-			return nil
+			return mergeSecrets(cmd, args[0], vars)
 		},
 	}
 	c.Flags().StringVar(&file, "file", ".env", "dotenv file")
