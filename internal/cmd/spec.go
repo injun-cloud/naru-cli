@@ -69,6 +69,9 @@ func editInEditor(initial []byte, suffix string) ([]byte, error) {
 		editor = "vi"
 	}
 	parts := strings.Fields(editor) // allow "code -w" etc.
+	if len(parts) == 0 {
+		parts = []string{"vi"} // EDITOR was set but whitespace-only
+	}
 	ed := exec.Command(parts[0], append(parts[1:], name)...)
 	ed.Stdin, ed.Stdout, ed.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := ed.Run(); err != nil {
