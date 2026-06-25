@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -20,7 +21,7 @@ func newTunnelCmd() *cobra.Command {
 				return err
 			}
 			var ep apitypes.EndpointsResponse
-			if err := cl.Get(cmd.Context(), "/v1/projects/"+project+"/endpoints", &ep); err != nil {
+			if err := cl.Get(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/endpoints", &ep); err != nil {
 				return err
 			}
 			return printer().Emit(ep, func() {

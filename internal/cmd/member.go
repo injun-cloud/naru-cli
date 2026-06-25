@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"net/url"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -20,7 +21,7 @@ func newMemberCmd() *cobra.Command {
 					return err
 				}
 				var out apitypes.MembersResponse
-				if err := cl.Get(cmd.Context(), "/v1/projects/"+project+"/members", &out); err != nil {
+				if err := cl.Get(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members", &out); err != nil {
 					return err
 				}
 				return printer().Emit(out, func() {
@@ -41,7 +42,7 @@ func newMemberCmd() *cobra.Command {
 					return err
 				}
 				var out apitypes.MemberInfo
-				if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/members", apitypes.AddMemberRequest{Username: args[0]}, &out); err != nil {
+				if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members", apitypes.AddMemberRequest{Username: args[0]}, &out); err != nil {
 					return err
 				}
 				output.Success("added owner " + out.Username + " to " + project)
@@ -55,7 +56,7 @@ func newMemberCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := cl.Delete(cmd.Context(), "/v1/projects/"+project+"/members/"+args[0], nil); err != nil {
+				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members/"+url.PathEscape(args[0]), nil); err != nil {
 					return err
 				}
 				output.Success("removed owner " + args[0] + " from " + project)

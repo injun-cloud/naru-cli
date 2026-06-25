@@ -14,7 +14,7 @@ import (
 )
 
 func secretPath(project, app string) string {
-	return fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", project, app)
+	return fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", url.PathEscape(project), url.PathEscape(app))
 }
 
 func newSecretCmd() *cobra.Command {

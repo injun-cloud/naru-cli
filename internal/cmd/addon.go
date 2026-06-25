@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -12,7 +13,7 @@ import (
 )
 
 func addonPath(project, addon string) string {
-	return fmt.Sprintf("/v1/projects/%s/addons/%s", project, addon)
+	return fmt.Sprintf("/v1/projects/%s/addons/%s", url.PathEscape(project), url.PathEscape(addon))
 }
 
 func newAddonCmd() *cobra.Command {
@@ -48,7 +49,7 @@ func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec api
 	if !client.NotFound(err) {
 		return "", err
 	}
-	if err := cl.Post(cmd.Context(), "/v1/projects/"+project+"/addons", req, &out); err != nil {
+	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/addons", req, &out); err != nil {
 		return "", err
 	}
 	return "created", nil
@@ -63,7 +64,7 @@ func addonListCmd() *cobra.Command {
 				return err
 			}
 			var addons []apitypes.AddonSpec
-			if err := cl.Get(cmd.Context(), "/v1/projects/"+project+"/addons", &addons); err != nil {
+			if err := cl.Get(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/addons", &addons); err != nil {
 				return err
 			}
 			return printer().Emit(addons, func() {

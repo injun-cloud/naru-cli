@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -58,7 +59,7 @@ func newProjectCmd() *cobra.Command {
 					return err
 				}
 				var p apitypes.Project
-				if err := cl.Get(cmd.Context(), "/v1/projects/"+args[0], &p); err != nil {
+				if err := cl.Get(cmd.Context(), "/v1/projects/"+url.PathEscape(args[0]), &p); err != nil {
 					return err
 				}
 				return printer().Emit(p, func() {
@@ -75,7 +76,7 @@ func newProjectCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := cl.Delete(cmd.Context(), "/v1/projects/"+args[0], nil); err != nil {
+				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(args[0]), nil); err != nil {
 					return err
 				}
 				output.Success("deleted project " + args[0])
