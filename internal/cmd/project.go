@@ -116,12 +116,17 @@ func newProjectCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if removed {
-					output.Success("unlinked this directory")
-				} else {
-					output.Info("no .naru link in this directory")
+				status := "unlinked"
+				if !removed {
+					status = "noop"
 				}
-				return nil
+				return printer().Emit(map[string]any{"status": status, "removed": removed}, func() {
+					if removed {
+						output.Success("unlinked this directory")
+					} else {
+						output.Info("no .naru link in this directory")
+					}
+				})
 			},
 		},
 	)
