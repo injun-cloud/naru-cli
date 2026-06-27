@@ -24,7 +24,7 @@ func newAppCmd() *cobra.Command {
 	c := &cobra.Command{Use: "app", Aliases: []string{"a"}, Short: "Manage applications"}
 	c.AddCommand(
 		appListCmd(), appCreateCmd(), appGetCmd(), appEditCmd(), appApplyCmd(), appRmCmd(),
-		appStatusCmd(), appLogsCmd(), appDeployCmd(), appBuildsCmd(), appTunnelCmd(),
+		appStatusCmd(), appLogsCmd(), appDeployCmd(), appPromoteCmd(), appBuildsCmd(), appTunnelCmd(),
 	)
 	return c
 }
@@ -327,6 +327,26 @@ func appDeployCmd() *cobra.Command {
 				return err
 			}
 			output.Success("build started: " + out.BuildID)
+			return nil
+		},
+	}
+}
+
+func appPromoteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "promote <name>", Short: "Promote a paused rollout (approve a manual canary/bluegreen gate)", Args: cobra.ExactArgs(1),
+		Long: "Resume a Rollout paused at a manual gate (canary pause / bluegreen manual\n" +
+			"promote), fully promoting the new version.",
+		Example: "  naru app promote api -p myproj",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/promote", nil, nil); err != nil {
+				return err
+			}
+			output.Success("promoted " + args[0])
 			return nil
 		},
 	}
