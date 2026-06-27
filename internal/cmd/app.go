@@ -24,7 +24,7 @@ func newAppCmd() *cobra.Command {
 	c := &cobra.Command{Use: "app", Aliases: []string{"a"}, Short: "Manage applications"}
 	c.AddCommand(
 		appListCmd(), appCreateCmd(), appGetCmd(), appEditCmd(), appApplyCmd(), appRmCmd(),
-		appStatusCmd(), appLogsCmd(), appDeployCmd(), appPromoteCmd(), appBuildsCmd(), appTunnelCmd(),
+		appStatusCmd(), appLogsCmd(), appDeployCmd(), appPromoteCmd(), appAbortCmd(), appBuildsCmd(), appTunnelCmd(),
 	)
 	return c
 }
@@ -351,6 +351,26 @@ func appPromoteCmd() *cobra.Command {
 				return err
 			}
 			output.Success("promoted " + args[0])
+			return nil
+		},
+	}
+}
+
+func appAbortCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "abort <name>", Short: "Abort an in-progress rollout (roll back to the last stable version)", Args: cobra.ExactArgs(1),
+		Long: "Abort a Rollout that is in progress, rolling back to the last stable\n" +
+			"version. The counterpart to `naru app promote`.",
+		Example: "  naru app abort api -p myproj",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/abort", nil, nil); err != nil {
+				return err
+			}
+			output.Success("aborted " + args[0])
 			return nil
 		},
 	}
