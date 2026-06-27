@@ -533,7 +533,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("get_addon_connection",
-		mcp.WithDescription("Get an addon's full connection incl. password (the addon's secret). Fetch this and write the values into an app's secret with set_secret, under whatever key names the app expects."),
+		mcp.WithDescription("Get an addon's connection info (type/host/port/username). Addons are passwordless (network-isolated). Fetch this and write the values into an app's secret with set_secret, under whatever key names the app expects."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -544,7 +544,7 @@ func register(s *mcpserver.MCPServer) {
 	applyAddon := mcp.NewToolWithRawSchema("apply_addon",
 		"Create or update an addon (declarative upsert). `spec` is the full addon spec "+
 			"(name, type, version, size, port, resources) — fields match `get_schema`. The "+
-			"addon type is immutable. A random password is generated into Vault; reach the addon "+
+			"addon type is immutable. Addons are passwordless (network-isolated); reach the addon "+
 			"by its name as hostname and wire an app to it with set_secret (env var names are your choice).",
 		applyToolSchema("addons"))
 	applyAddon.Annotations.DestructiveHint = ptr(false)
