@@ -408,6 +408,15 @@ func register(s *mcpserver.MCPServer) {
 			return write(ctx, "POST", fmt.Sprintf("/v1/projects/%s/apps/%s/promote", p, a), nil)
 		})
 
+	s.AddTool(mcp.NewTool("abort_app",
+		mcp.WithDescription("Abort an in-progress rollout (roll back to the last stable version) — the counterpart to promote_app."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("app", mcp.Required()), nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			p, a := projApp(req)
+			return write(ctx, "POST", fmt.Sprintf("/v1/projects/%s/apps/%s/abort", p, a), nil)
+		})
+
 	s.AddTool(mcp.NewTool("get_app_logs",
 		mcp.WithDescription("Get an app's recent runtime logs (bounded tail, not streaming)."),
 		mcp.WithString("project", mcp.Required()),
