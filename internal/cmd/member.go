@@ -45,8 +45,9 @@ func newMemberCmd() *cobra.Command {
 				if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members", apitypes.AddMemberRequest{Username: args[0]}, &out); err != nil {
 					return err
 				}
-				output.Success("added owner " + out.Username + " to " + project)
-				return nil
+				return printer().Emit(out, func() {
+					output.Success("added owner " + out.Username + " to " + project)
+				})
 			},
 		},
 		&cobra.Command{
@@ -59,8 +60,9 @@ func newMemberCmd() *cobra.Command {
 				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members/"+url.PathEscape(args[0]), nil); err != nil {
 					return err
 				}
-				output.Success("removed owner " + args[0] + " from " + project)
-				return nil
+				return printer().Emit(map[string]string{"status": "removed", "username": args[0], "project": project}, func() {
+					output.Success("removed owner " + args[0] + " from " + project)
+				})
 			},
 		},
 	)

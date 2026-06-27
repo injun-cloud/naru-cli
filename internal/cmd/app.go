@@ -30,35 +30,36 @@ func newAppCmd() *cobra.Command {
 }
 
 // upsertApp creates the app if absent, otherwise replaces it (PUT). The CI-owned
-// git hash is preserved server-side. It returns "created" or "updated".
-func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AppSpec) (string, error) {
+// git hash is preserved server-side. It returns "created"/"updated" and the
+// server-returned spec.
+func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AppSpec) (string, apitypes.AppSpec, error) {
+	var out apitypes.AppSpec
 	if spec.Name == "" {
-		return "", fmt.Errorf("spec is missing 'name'")
+		return "", out, fmt.Errorf("spec is missing 'name'")
 	}
 	if spec.Git.Owner == "" || spec.Git.Repo == "" {
-		return "", fmt.Errorf("spec is missing git.owner/git.repo")
+		return "", out, fmt.Errorf("spec is missing git.owner/git.repo")
 	}
 	spec.Git.Type = "github"
 	if spec.Git.Branch == "" {
 		spec.Git.Branch = "main"
 	}
-	var out apitypes.AppSpec
 	err := cl.Get(cmd.Context(), appPath(project, spec.Name), &apitypes.AppSpec{})
 	if err == nil {
 		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
 		if err := cl.Put(cmd.Context(), appPath(project, spec.Name), req, &out); err != nil {
-			return "", err
+			return "", out, err
 		}
-		return "updated", nil
+		return "updated", out, nil
 	}
 	if !client.NotFound(err) {
-		return "", err
+		return "", out, err
 	}
 	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
 	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/apps", req, &out); err != nil {
-		return "", err
+		return "", out, err
 	}
-	return "created", nil
+	return "created", out, nil
 }
 
 func appListCmd() *cobra.Command {
@@ -111,12 +112,13 @@ func appCreateCmd() *cobra.Command {
 				Name: args[0],
 				Git:  apitypes.GitSpec{Type: "github", Owner: owner, Repo: name, Branch: branch},
 			}
-			action, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := upsertApp(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " app " + args[0] + " — edit it or push to its repo to build")
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " app " + args[0] + " — edit it or push to its repo to build")
+			})
 		},
 	}
 	c.Flags().StringVar(&repo, "repo", "", "owner/repo (required)")
@@ -195,12 +197,13 @@ func appEditCmd() *cobra.Command {
 				return err
 			}
 			spec.Name = args[0] // name is immutable
-			action, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := upsertApp(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " app " + args[0])
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " app " + args[0])
+			})
 		},
 	}
 }
@@ -220,12 +223,13 @@ func appApplyCmd() *cobra.Command {
 			if err := loadSpecFile(file, &spec); err != nil {
 				return err
 			}
-			action, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := upsertApp(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " app " + spec.Name)
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " app " + spec.Name)
+			})
 		},
 	}
 	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON, - for stdin)")
@@ -244,8 +248,9 @@ func appRmCmd() *cobra.Command {
 			if err := cl.Delete(cmd.Context(), appPath(project, args[0]), nil); err != nil {
 				return err
 			}
-			output.Success("deleted app " + args[0])
-			return nil
+			return printer().Emit(map[string]string{"status": "deleted", "name": args[0]}, func() {
+				output.Success("deleted app " + args[0])
+			})
 		},
 	}
 }
