@@ -23,13 +23,14 @@ func newAddonCmd() *cobra.Command {
 }
 
 // upsertAddon creates the addon if absent, otherwise replaces it. The addon type
-// is immutable. Returns "created" or "updated".
-func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AddonSpec) (string, error) {
+// is immutable. Returns "created"/"updated" and the server-returned spec.
+func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AddonSpec) (string, apitypes.AddonSpec, error) {
+	var out apitypes.AddonSpec
 	if spec.Name == "" {
-		return "", fmt.Errorf("spec is missing 'name'")
+		return "", out, fmt.Errorf("spec is missing 'name'")
 	}
 	if spec.Type == "" || spec.Version == "" {
-		return "", fmt.Errorf("spec is missing 'type'/'version'")
+		return "", out, fmt.Errorf("spec is missing 'type'/'version'")
 	}
 	if spec.Size == "" {
 		spec.Size = "1Gi"
@@ -38,21 +39,20 @@ func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec api
 	if spec.Port > 0 {
 		req.Port = &spec.Port
 	}
-	var out apitypes.AddonSpec
 	err := cl.Get(cmd.Context(), addonPath(project, spec.Name), &apitypes.AddonSpec{})
 	if err == nil {
 		if err := cl.Put(cmd.Context(), addonPath(project, spec.Name), req, &out); err != nil {
-			return "", err
+			return "", out, err
 		}
-		return "updated", nil
+		return "updated", out, nil
 	}
 	if !client.NotFound(err) {
-		return "", err
+		return "", out, err
 	}
 	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/addons", req, &out); err != nil {
-		return "", err
+		return "", out, err
 	}
-	return "created", nil
+	return "created", out, nil
 }
 
 func addonListCmd() *cobra.Command {
@@ -93,12 +93,13 @@ func addonCreateCmd() *cobra.Command {
 				return err
 			}
 			spec := apitypes.AddonSpec{Name: args[0], Type: typ, Version: version, Size: size, Port: port}
-			action, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := upsertAddon(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " addon " + args[0])
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " addon " + args[0])
+			})
 		},
 	}
 	c.Flags().StringVar(&typ, "type", "", "mysql|postgres|mongo|redis (required)")
@@ -173,12 +174,13 @@ func addonEditCmd() *cobra.Command {
 				return err
 			}
 			spec.Name, spec.Type = args[0], cur.Type // name + type are immutable
-			action, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := upsertAddon(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " addon " + args[0])
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " addon " + args[0])
+			})
 		},
 	}
 }
@@ -197,12 +199,13 @@ func addonApplyCmd() *cobra.Command {
 			if err := loadSpecFile(file, &spec); err != nil {
 				return err
 			}
-			action, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := upsertAddon(cmd, cl, project, spec)
 			if err != nil {
 				return err
 			}
-			output.Success(action + " addon " + spec.Name)
-			return nil
+			return printer().Emit(out, func() {
+				output.Success(action + " addon " + spec.Name)
+			})
 		},
 	}
 	c.Flags().StringVarP(&file, "file", "f", "", "spec file (YAML/JSON, - for stdin)")
@@ -221,8 +224,9 @@ func addonRmCmd() *cobra.Command {
 			if err := cl.Delete(cmd.Context(), addonPath(project, args[0]), nil); err != nil {
 				return err
 			}
-			output.Success("deleted addon " + args[0])
-			return nil
+			return printer().Emit(map[string]string{"status": "deleted", "name": args[0]}, func() {
+				output.Success("deleted addon " + args[0])
+			})
 		},
 	}
 }

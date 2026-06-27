@@ -32,8 +32,13 @@ func mergeSecrets(cmd *cobra.Command, app string, vars map[string]string) error 
 	if err := cl.Patch(cmd.Context(), secretPath(project, app), apitypes.SecretVars{Vars: vars}, nil); err != nil {
 		return err
 	}
-	output.Success(fmt.Sprintf("set %d secret(s) on %s", len(vars), app))
-	return nil
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		keys = append(keys, k)
+	}
+	return printer().Emit(map[string]any{"status": "set", "app": app, "keys": keys}, func() {
+		output.Success(fmt.Sprintf("set %d secret(s) on %s", len(vars), app))
+	})
 }
 
 func secretLsCmd() *cobra.Command {
@@ -103,8 +108,9 @@ func secretRmCmd() *cobra.Command {
 					return err
 				}
 			}
-			output.Success("deleted secret(s)")
-			return nil
+			return printer().Emit(map[string]any{"status": "deleted", "app": args[0], "keys": args[1:]}, func() {
+				output.Success("deleted secret(s)")
+			})
 		},
 	}
 }

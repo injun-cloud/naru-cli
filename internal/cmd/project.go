@@ -47,8 +47,9 @@ func newProjectCmd() *cobra.Command {
 				if err := cl.Post(cmd.Context(), "/v1/projects", apitypes.ProjectCreateRequest{Name: args[0]}, &out); err != nil {
 					return err
 				}
-				output.Success("created project " + args[0])
-				return nil
+				return printer().Emit(out, func() {
+					output.Success("created project " + args[0])
+				})
 			},
 		},
 		&cobra.Command{
@@ -79,8 +80,9 @@ func newProjectCmd() *cobra.Command {
 				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(args[0]), nil); err != nil {
 					return err
 				}
-				output.Success("deleted project " + args[0])
-				return nil
+				return printer().Emit(map[string]string{"status": "deleted", "name": args[0]}, func() {
+					output.Success("deleted project " + args[0])
+				})
 			},
 		},
 		&cobra.Command{
@@ -89,8 +91,9 @@ func newProjectCmd() *cobra.Command {
 				if err := config.SaveLink(args[0]); err != nil {
 					return err
 				}
-				output.Success("linked to project " + args[0])
-				return nil
+				return printer().Emit(map[string]string{"status": "linked", "name": args[0]}, func() {
+					output.Success("linked to project " + args[0])
+				})
 			},
 		},
 	)
