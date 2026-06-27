@@ -330,8 +330,9 @@ func appDeployCmd() *cobra.Command {
 			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/deploy", nil, &out); err != nil {
 				return err
 			}
-			output.Success("build started: " + out.BuildID)
-			return nil
+			return printer().Emit(out, func() {
+				output.Success("build started: " + out.BuildID)
+			})
 		},
 	}
 }
@@ -347,11 +348,13 @@ func appPromoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/promote", nil, nil); err != nil {
+			var out map[string]string
+			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/promote", nil, &out); err != nil {
 				return err
 			}
-			output.Success("promoted " + args[0])
-			return nil
+			return printer().Emit(out, func() {
+				output.Success("promoted " + args[0])
+			})
 		},
 	}
 }
@@ -367,11 +370,13 @@ func appAbortCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/abort", nil, nil); err != nil {
+			var out map[string]string
+			if err := cl.Post(cmd.Context(), appPath(project, args[0])+"/abort", nil, &out); err != nil {
 				return err
 			}
-			output.Success("aborted " + args[0])
-			return nil
+			return printer().Emit(out, func() {
+				output.Success("aborted " + args[0])
+			})
 		},
 	}
 }
