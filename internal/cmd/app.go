@@ -250,6 +250,43 @@ func appRmCmd() *cobra.Command {
 	}
 }
 
+// truncate shortens s to max runes, appending an ellipsis when it overflows.
+func truncate(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
+}
+
+// renderPods prints the shared pod status table for app/addon status. It folds
+// the exit code and last-termination reason into REASON when present.
+func renderPods(pods []apitypes.PodInfo) {
+	rows := make([][]string, 0, len(pods))
+	for _, p := range pods {
+		reason := p.Reason
+		if p.ExitCode != nil || p.LastTerminationReason != "" {
+			detail := ""
+			if p.ExitCode != nil {
+				detail = fmt.Sprintf("exit %d", *p.ExitCode)
+			}
+			if p.LastTerminationReason != "" {
+				if detail != "" {
+					detail += ": "
+				}
+				detail += p.LastTerminationReason
+			}
+			if reason != "" {
+				reason = fmt.Sprintf("%s (%s)", reason, detail)
+			} else {
+				reason = detail
+			}
+		}
+		rows = append(rows, []string{p.Name, p.Phase, strconv.FormatBool(p.Ready), strconv.Itoa(p.Restarts), p.Age, reason})
+	}
+	output.Table([]string{"POD", "PHASE", "READY", "RESTARTS", "AGE", "REASON"}, rows)
+}
+
 func appStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "status <name>", Short: "Show deployment status", Args: cobra.ExactArgs(1),
@@ -264,11 +301,7 @@ func appStatusCmd() *cobra.Command {
 			}
 			return printer().Emit(st, func() {
 				fmt.Printf("phase: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
-				rows := make([][]string, 0, len(st.Pods))
-				for _, p := range st.Pods {
-					rows = append(rows, []string{p.Name, p.Phase, strconv.FormatBool(p.Ready), strconv.Itoa(p.Restarts), p.Reason})
-				}
-				output.Table([]string{"POD", "PHASE", "READY", "RESTARTS", "REASON"}, rows)
+				renderPods(st.Pods)
 			})
 		},
 	}
@@ -407,9 +440,9 @@ func appBuildsCmd() *cobra.Command {
 			return printer().Emit(builds, func() {
 				rows := make([][]string, 0, len(builds))
 				for _, b := range builds {
-					rows = append(rows, []string{b.ID, b.Phase, b.StartedAt})
+					rows = append(rows, []string{b.ID, b.Phase, b.StartedAt, truncate(b.Message, 60)})
 				}
-				output.Table([]string{"BUILD", "PHASE", "STARTED"}, rows)
+				output.Table([]string{"BUILD", "PHASE", "STARTED", "MESSAGE"}, rows)
 			})
 		},
 	}

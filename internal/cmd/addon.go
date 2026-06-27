@@ -268,11 +268,7 @@ func addonStatusCmd() *cobra.Command {
 			}
 			return printer().Emit(st, func() {
 				fmt.Printf("phase: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
-				rows := make([][]string, 0, len(st.Pods))
-				for _, p := range st.Pods {
-					rows = append(rows, []string{p.Name, p.Phase, strconv.FormatBool(p.Ready), strconv.Itoa(p.Restarts), p.Reason})
-				}
-				output.Table([]string{"POD", "PHASE", "READY", "RESTARTS", "REASON"}, rows)
+				renderPods(st.Pods)
 			})
 		},
 	}
