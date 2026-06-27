@@ -279,7 +279,7 @@ func addonStatusCmd() *cobra.Command {
 }
 
 func addonLogsCmd() *cobra.Command {
-	var follow bool
+	var follow, previous bool
 	var tail, since int
 	var container string
 	c := &cobra.Command{
@@ -290,7 +290,7 @@ func addonLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container), func(line string) {
+			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container, previous), func(line string) {
 				fmt.Println(line)
 			})
 		},
@@ -299,6 +299,7 @@ func addonLogsCmd() *cobra.Command {
 	c.Flags().IntVar(&tail, "tail", 100, "lines from the end")
 	c.Flags().IntVar(&since, "since", 0, "seconds of history")
 	c.Flags().StringVar(&container, "container", "", "container name")
+	c.Flags().BoolVar(&previous, "previous", false, "logs from the previous (crashed) container instance")
 	return c
 }
 

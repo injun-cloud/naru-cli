@@ -107,6 +107,24 @@ func collectLogs(ctx context.Context, path string) (*mcp.CallToolResult, error) 
 
 func arg(req mcp.CallToolRequest, k string) string { return req.GetString(k, "") }
 
+// logQuery builds a bounded (non-following) log query string consistently with
+// the CLI's logQuery, URL-escaping the optional container.
+func logQuery(tail, since int, container string, previous bool) string {
+	q := url.Values{}
+	q.Set("follow", "false")
+	q.Set("tail", strconv.Itoa(tail))
+	if since > 0 {
+		q.Set("since", strconv.Itoa(since))
+	}
+	if container != "" {
+		q.Set("container", container)
+	}
+	if previous {
+		q.Set("previous", "true")
+	}
+	return "?" + q.Encode()
+}
+
 // scalarVars converts the MCP "vars" argument into string secret values. It
 // rejects a missing/non-object argument or any non-scalar value (object, array,
 // null) so a structured value is never silently formatted into a garbage secret.
@@ -394,10 +412,14 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Get an app's recent runtime logs (bounded tail, not streaming)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
-		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")), ro, nd),
+		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")),
+		mcp.WithNumber("since", mcp.Description("seconds of history to include")),
+		mcp.WithString("container", mcp.Description("container name")),
+		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/logs?follow=false&tail=%d", p, a, req.GetInt("tail", 200)))
+			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
+			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/logs%s", p, a, q))
 		})
 
 	s.AddTool(mcp.NewTool("list_builds",
@@ -413,10 +435,15 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Get a build's logs (bounded). Use list_builds to find the build id."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
-		mcp.WithString("build", mcp.Required(), mcp.Description("build id from list_builds")), ro, nd),
+		mcp.WithString("build", mcp.Required(), mcp.Description("build id from list_builds")),
+		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs?follow=false", p, a, url.PathEscape(arg(req, "build"))))
+			q := "?follow=false"
+			if req.GetBool("previous", false) {
+				q += "&previous=true"
+			}
+			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs%s", p, a, url.PathEscape(arg(req, "build")), q))
 		})
 
 	// --- secrets ---
@@ -486,10 +513,14 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithDescription("Get an addon's recent logs (bounded tail, not streaming)."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()),
-		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")), ro, nd),
+		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")),
+		mcp.WithNumber("since", mcp.Description("seconds of history to include")),
+		mcp.WithString("container", mcp.Description("container name")),
+		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAddon(req)
-			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/logs?follow=false&tail=%d", p, a, req.GetInt("tail", 200)))
+			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
+			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/logs%s", p, a, q))
 		})
 
 	s.AddTool(mcp.NewTool("get_addon_connection",
