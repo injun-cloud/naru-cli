@@ -445,13 +445,13 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
 		mcp.WithString("build", mcp.Required(), mcp.Description("build id from list_builds")),
+		mcp.WithNumber("tail", mcp.Description("lines from the end (default 200)")),
+		mcp.WithNumber("since", mcp.Description("seconds of history to include")),
 		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			q := "?follow=false"
-			if req.GetBool("previous", false) {
-				q += "&previous=true"
-			}
+			// Build pods hardcode container "main"; no container override on purpose.
+			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), "", req.GetBool("previous", false))
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs%s", p, a, url.PathEscape(arg(req, "build")), q))
 		})
 
