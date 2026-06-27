@@ -96,6 +96,34 @@ func newProjectCmd() *cobra.Command {
 				})
 			},
 		},
+		&cobra.Command{
+			Use: "current", Aliases: []string{"cur"}, Short: "Show the resolved project and its source", Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				project, source := resolveProjectSource()
+				return printer().Emit(map[string]string{"project": project, "source": source}, func() {
+					if project == "" {
+						output.Info("no project set — use --project, $NARU_PROJECT, or run: naru project link")
+						return
+					}
+					fmt.Printf("project: %s\nsource:  %s\n", project, source)
+				})
+			},
+		},
+		&cobra.Command{
+			Use: "unlink", Short: "Remove this directory's project link (.naru)", Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				removed, err := config.RemoveLink()
+				if err != nil {
+					return err
+				}
+				if removed {
+					output.Success("unlinked this directory")
+				} else {
+					output.Info("no .naru link in this directory")
+				}
+				return nil
+			},
+		},
 	)
 	return c
 }

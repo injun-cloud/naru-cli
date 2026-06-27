@@ -158,14 +158,24 @@ func clientAndProject() (*client.Client, string, error) {
 
 // resolveProject returns the project from --project, $NARU_PROJECT, or .naru.
 func resolveProject() (string, error) {
+	p, _ := resolveProjectSource()
+	if p == "" {
+		return "", fmt.Errorf("no project set — use --project, $NARU_PROJECT, or run: naru project link")
+	}
+	return p, nil
+}
+
+// resolveProjectSource returns the resolved project and which source won:
+// "--project", "$NARU_PROJECT", ".naru", or "none".
+func resolveProjectSource() (project, source string) {
 	if flagProject != "" {
-		return flagProject, nil
+		return flagProject, "--project"
 	}
 	if v := os.Getenv("NARU_PROJECT"); v != "" {
-		return v, nil
+		return v, "$NARU_PROJECT"
 	}
 	if p := config.LinkedProject(); p != "" {
-		return p, nil
+		return p, ".naru"
 	}
-	return "", fmt.Errorf("no project set — use --project, $NARU_PROJECT, or run: naru project link")
+	return "", "none"
 }
