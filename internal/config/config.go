@@ -84,6 +84,18 @@ func SaveLink(project string) error {
 	return os.WriteFile(".naru", data, 0644)
 }
 
+// RemoveLink deletes the directory-local .naru link. It returns false (no error)
+// when no link exists.
+func RemoveLink() (bool, error) {
+	if err := os.Remove(".naru"); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // Resolve merges file config with env overrides (env wins).
 func Resolve() (*Global, error) {
 	g, err := LoadGlobal()
