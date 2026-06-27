@@ -276,7 +276,7 @@ func appStatusCmd() *cobra.Command {
 
 // logQuery builds the query string for a log stream, URL-escaping the optional
 // container so a value containing & or # cannot corrupt or inject query params.
-func logQuery(follow bool, tail, since int, container string) string {
+func logQuery(follow bool, tail, since int, container string, previous bool) string {
 	q := url.Values{}
 	q.Set("follow", strconv.FormatBool(follow))
 	q.Set("tail", strconv.Itoa(tail))
@@ -284,11 +284,14 @@ func logQuery(follow bool, tail, since int, container string) string {
 	if container != "" {
 		q.Set("container", container)
 	}
+	if previous {
+		q.Set("previous", "true")
+	}
 	return "?" + q.Encode()
 }
 
 func appLogsCmd() *cobra.Command {
-	var follow bool
+	var follow, previous bool
 	var tail, since int
 	var container string
 	c := &cobra.Command{
@@ -299,7 +302,7 @@ func appLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container), func(line string) {
+			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container, previous), func(line string) {
 				fmt.Println(line)
 			})
 		},
@@ -308,6 +311,7 @@ func appLogsCmd() *cobra.Command {
 	c.Flags().IntVar(&tail, "tail", 100, "lines from the end")
 	c.Flags().IntVar(&since, "since", 0, "seconds of history")
 	c.Flags().StringVar(&container, "container", "", "container name")
+	c.Flags().BoolVar(&previous, "previous", false, "logs from the previous (crashed) container instance")
 	return c
 }
 
