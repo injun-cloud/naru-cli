@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/injun-cloud/naru-server/pkg/apitypes"
+	"github.com/injun-cloud/naru-cli/internal/apitypes"
 )
 
 // NotFound reports whether err is a 404 from the server.
