@@ -236,10 +236,13 @@ func appApplyCmd() *cobra.Command {
 
 func appRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "rm <name>", Aliases: []string{"delete"}, Short: "Delete an app", Args: cobra.ExactArgs(1),
+		Use: "rm <name>", Aliases: []string{"delete", "remove"}, Short: "Delete an app (removes its deployment and secrets)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
+				return err
+			}
+			if err := confirmDestroy("app", args[0], false); err != nil {
 				return err
 			}
 			if err := cl.Delete(cmd.Context(), appPath(project, args[0]), nil); err != nil {
