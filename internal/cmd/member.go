@@ -29,7 +29,7 @@ func newMemberCmd() *cobra.Command {
 					for _, m := range out.Owners {
 						rows = append(rows, []string{m.Username, strconv.FormatInt(m.GithubID, 10)})
 					}
-					output.Table([]string{"USERNAME", "GITHUB ID"}, rows)
+					output.Table([]string{"USERNAME", "GITHUB_ID"}, rows)
 				})
 			},
 		},
@@ -60,7 +60,7 @@ func newMemberCmd() *cobra.Command {
 				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/members/"+url.PathEscape(args[0]), nil); err != nil {
 					return err
 				}
-				return printer().Emit(map[string]string{"status": "removed", "username": args[0], "project": project}, func() {
+				return printer().Emit(map[string]string{"status": "deleted", "username": args[0], "project": project}, func() {
 					output.Success("removed owner " + args[0] + " from " + project)
 				})
 			},

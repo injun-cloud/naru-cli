@@ -26,11 +26,8 @@ func newAddonCmd() *cobra.Command {
 // is immutable. Returns "created"/"updated" and the server-returned spec.
 func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AddonSpec) (string, apitypes.AddonSpec, error) {
 	var out apitypes.AddonSpec
-	if spec.Name == "" {
-		return "", out, fmt.Errorf("spec is missing 'name'")
-	}
-	if spec.Type == "" || spec.Version == "" {
-		return "", out, fmt.Errorf("spec is missing 'type'/'version'")
+	if spec.Name == "" || spec.Type == "" || spec.Version == "" {
+		return "", out, fmt.Errorf("spec needs name, type and version")
 	}
 	if spec.Size == "" {
 		spec.Size = "1Gi"
@@ -115,6 +112,8 @@ func addonGetCmd() *cobra.Command {
 	var outFmt string
 	c := &cobra.Command{
 		Use: "get <name>", Short: "Show an addon (-o yaml for the editable spec)", Args: cobra.ExactArgs(1),
+		Example: "  naru addon get db -p myproj\n" +
+			"  naru addon get db -o yaml > db.yaml   # edit, then: naru addon apply -f db.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -234,6 +233,7 @@ func addonRmCmd() *cobra.Command {
 func addonConnCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "conn <name>", Short: "Show connection info (addons are passwordless)", Args: cobra.ExactArgs(1),
+		Example: "  naru addon conn db -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
@@ -246,13 +246,9 @@ func addonConnCmd() *cobra.Command {
 			return printer().Emit(dto, func() {
 				fmt.Printf("type:     %s\nhost:     %s\nport:     %d\n", dto.Type, dto.Host, dto.Port)
 				if dto.Username != "" {
-					fmt.Printf("username: %s (default superuser)\n", dto.Username)
+					fmt.Printf("username: %s (default superuser, no password)\n", dto.Username)
 				}
-				if dto.Password != "" {
-					fmt.Printf("password: %s\n", dto.Password)
-				} else {
-					fmt.Println("password: (none — passwordless; set your own via `naru addon tunnel`)")
-				}
+				fmt.Println("note:     passwordless — the project is network-isolated; set your own auth after connecting")
 			})
 		},
 	}

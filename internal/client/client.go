@@ -66,6 +66,11 @@ func (e *APIError) Error() string {
 		} else {
 			s += " (" + e.Hint + ")"
 		}
+		return s
+	}
+	// No server-provided hint: add a generic, status-based nudge.
+	if e.Status == http.StatusNotFound {
+		s += " — check the name with the matching `naru ... ls`"
 	}
 	return s
 }

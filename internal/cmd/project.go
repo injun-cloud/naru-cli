@@ -87,6 +87,7 @@ func newProjectCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use: "link <name>", Short: "Link this directory to a project (.naru)", Args: cobra.ExactArgs(1),
+			Example: "  naru project link myproj   # subsequent commands use it without -p",
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if err := config.SaveLink(args[0]); err != nil {
 					return err
