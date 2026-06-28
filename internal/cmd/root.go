@@ -24,6 +24,7 @@ var (
 	flagJQ      string
 	flagFields  []string
 	flagNoInput bool
+	flagYes     bool
 
 	version = "dev"
 )
@@ -80,6 +81,7 @@ Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
 	pf.StringVar(&flagJQ, "jq", "", "filter JSON output with a jq expression")
 	pf.StringSliceVar(&flagFields, "fields", nil, "JSON output with only these fields, e.g. --fields name,status")
 	pf.BoolVar(&flagNoInput, "no-input", false, "never prompt or open an editor (for CI/agents)")
+	pf.BoolVarP(&flagYes, "yes", "y", false, "skip confirmation prompts for destructive deletes")
 
 	root.AddCommand(
 		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(), newSchemaCmd(),

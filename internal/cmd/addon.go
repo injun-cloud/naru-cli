@@ -214,10 +214,13 @@ func addonApplyCmd() *cobra.Command {
 
 func addonRmCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "rm <name>", Aliases: []string{"delete"}, Short: "Delete an addon", Args: cobra.ExactArgs(1),
+		Use: "rm <name>", Aliases: []string{"delete", "remove"}, Short: "Delete an addon and its data volume (irreversible)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {
+				return err
+			}
+			if err := confirmDestroy("addon", args[0], true); err != nil {
 				return err
 			}
 			if err := cl.Delete(cmd.Context(), addonPath(project, args[0]), nil); err != nil {

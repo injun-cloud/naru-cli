@@ -71,10 +71,13 @@ func newProjectCmd() *cobra.Command {
 			},
 		},
 		&cobra.Command{
-			Use: "rm <name>", Aliases: []string{"delete"}, Short: "Delete a project", Args: cobra.ExactArgs(1),
+			Use: "rm <name>", Aliases: []string{"delete", "remove"}, Short: "Delete a project and everything in it — apps, addons, all data (irreversible)", Args: cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				cl, err := newClient()
 				if err != nil {
+					return err
+				}
+				if err := confirmDestroy("project", args[0], true); err != nil {
 					return err
 				}
 				if err := cl.Delete(cmd.Context(), "/v1/projects/"+url.PathEscape(args[0]), nil); err != nil {
