@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/injun-cloud/naru-cli/internal/apitypes"
 	"github.com/injun-cloud/naru-cli/internal/client"
 	"github.com/injun-cloud/naru-cli/internal/output"
-	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
 
 func appPath(project, app string) string {

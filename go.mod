@@ -2,11 +2,8 @@ module github.com/injun-cloud/naru-cli
 
 go 1.26.4
 
-replace github.com/injun-cloud/naru-server => ../naru-server
-
 require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
-	github.com/injun-cloud/naru-server v0.0.0-00010101000000-000000000000
 	github.com/itchyny/gojq v0.12.19
 	github.com/mark3labs/mcp-go v0.55.0
 	github.com/spf13/cobra v1.10.2
@@ -15,6 +12,7 @@ require (
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

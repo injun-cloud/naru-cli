@@ -15,9 +15,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/injun-cloud/naru-cli/internal/apitypes"
 	"github.com/injun-cloud/naru-cli/internal/client"
 	"github.com/injun-cloud/naru-cli/internal/config"
-	"github.com/injun-cloud/naru-server/pkg/apitypes"
 )
 
 // Serve starts the stdio MCP server.
@@ -168,18 +168,65 @@ func projAPI(req mcp.CallToolRequest) string {
 
 func ptr[T any](v T) *T { return &v }
 
-// applyToolSchema builds an apply tool's input schema: {project, spec} where the
-// spec sub-schema is taken straight from the platform's project schema so the
-// agent sees the exact, typed field shape (single source of truth).
+// applyToolSchema builds an apply tool's input schema: {project, spec}. The spec
+// sub-schema is owned by the CLI (the CLI never imports or fetches the server's
+// schema); `naru schema` / get_schema remains the authoritative, on-demand field
+// reference if an agent needs the full detail.
 func applyToolSchema(specField string) json.RawMessage {
-	var root map[string]any
-	_ = json.Unmarshal(apitypes.RawSchema(), &root)
-	spec := map[string]any{"type": "object"} // fallback
-	if props, ok := root["properties"].(map[string]any); ok {
-		if f, ok := props[specField].(map[string]any); ok {
-			if items, ok := f["items"].(map[string]any); ok {
-				spec = items
-			}
+	str := map[string]any{"type": "string"}
+	intt := map[string]any{"type": "integer"}
+	resources := map[string]any{"type": "object", "description": "requests/limits, e.g. {\"requests\":{\"cpu\":\"100m\"}}"}
+	var spec map[string]any
+	switch specField {
+	case "addons":
+		spec = map[string]any{
+			"type":     "object",
+			"required": []string{"name", "type", "version"},
+			"properties": map[string]any{
+				"name":      str,
+				"type":      map[string]any{"type": "string", "enum": []string{"mysql", "postgres", "mongo", "redis"}},
+				"version":   str,
+				"port":      intt,
+				"size":      map[string]any{"type": "string", "description": "storage size, e.g. 1Gi"},
+				"resources": resources,
+			},
+		}
+	default: // applications
+		spec = map[string]any{
+			"type":     "object",
+			"required": []string{"name", "git"},
+			"properties": map[string]any{
+				"name": str,
+				"git": map[string]any{
+					"type":     "object",
+					"required": []string{"owner", "repo"},
+					"properties": map[string]any{
+						"owner":  str,
+						"repo":   str,
+						"branch": map[string]any{"type": "string", "description": "default: main"},
+					},
+				},
+				"replicas":  intt,
+				"resources": resources,
+				"rollout": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"strategy": map[string]any{"type": "string", "enum": []string{"rolling", "canary", "bluegreen"}},
+					},
+				},
+				"endpoints": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type":     "object",
+						"required": []string{"port"},
+						"properties": map[string]any{
+							"port":   intt,
+							"name":   str,
+							"routes": map[string]any{"type": "array", "items": str},
+						},
+					},
+				},
+			},
 		}
 	}
 	schema := map[string]any{
