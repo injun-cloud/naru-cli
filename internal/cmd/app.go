@@ -34,11 +34,8 @@ func newAppCmd() *cobra.Command {
 // server-returned spec.
 func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AppSpec) (string, apitypes.AppSpec, error) {
 	var out apitypes.AppSpec
-	if spec.Name == "" {
-		return "", out, fmt.Errorf("spec is missing 'name'")
-	}
-	if spec.Git.Owner == "" || spec.Git.Repo == "" {
-		return "", out, fmt.Errorf("spec is missing git.owner/git.repo")
+	if spec.Name == "" || spec.Git.Owner == "" || spec.Git.Repo == "" {
+		return "", out, fmt.Errorf("spec needs name and git.owner/git.repo")
 	}
 	spec.Git.Type = "github"
 	if spec.Git.Branch == "" {
@@ -305,7 +302,11 @@ func appStatusCmd() *cobra.Command {
 				return err
 			}
 			return printer().Emit(st, func() {
-				fmt.Printf("phase: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
+				line := fmt.Sprintf("phase: %s  ready: %d/%d", st.Phase, st.Ready, st.Desired)
+				if st.Revision != "" {
+					line += "  rev: " + st.Revision
+				}
+				fmt.Println(line + "  image: " + st.Image)
 				renderPods(st.Pods)
 			})
 		},
@@ -459,6 +460,8 @@ func appTunnelCmd() *cobra.Command {
 	var port, localPort int
 	c := &cobra.Command{
 		Use: "tunnel <name>", Short: "Tunnel a local port to an app endpoint", Args: cobra.ExactArgs(1),
+		Example: "  naru app tunnel api --port 8080 -p myproj\n" +
+			"  naru app tunnel api --port 8080 --local-port 9000 -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
 			if err != nil {

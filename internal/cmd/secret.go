@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -91,7 +92,7 @@ func secretSetCmd() *cobra.Command {
 			return mergeSecrets(cmd, args[0], vars)
 		},
 	}
-	c.Flags().StringVarP(&file, "file", "f", "", "dotenv file to merge (e.g. .env)")
+	c.Flags().StringVarP(&file, "file", "f", "", "dotenv file to merge (e.g. .env, - for stdin)")
 	return c
 }
 
@@ -109,7 +110,7 @@ func secretRmCmd() *cobra.Command {
 				}
 			}
 			return printer().Emit(map[string]any{"status": "deleted", "app": args[0], "keys": args[1:]}, func() {
-				output.Success("deleted secret(s)")
+				output.Success(fmt.Sprintf("deleted %d secret(s) on %s: %s", len(args[1:]), args[0], strings.Join(args[1:], ", ")))
 			})
 		},
 	}
@@ -148,13 +149,17 @@ func parseKV(pairs []string) (map[string]string, error) {
 }
 
 func parseDotenv(path string) (map[string]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+	var r io.Reader = os.Stdin
+	if path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		r = f
 	}
-	defer f.Close()
 	out := map[string]string{}
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
