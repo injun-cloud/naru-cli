@@ -17,8 +17,20 @@ curl -fsSL https://raw.githubusercontent.com/injun-cloud/naru-cli/main/install.s
 go install github.com/injun-cloud/naru-cli/cmd/naru@latest
 ```
 
-**Manual:** download a binary for your OS/arch from the
-[latest release](https://github.com/injun-cloud/naru-cli/releases/latest).
+**Windows / manual:** download the archive for your OS/arch from the
+[latest release](https://github.com/injun-cloud/naru-cli/releases/latest)
+(`naru_windows_amd64.zip`, etc.) and put `naru` on your `PATH` — or use `go install` above.
+
+## Upgrade
+
+```sh
+naru upgrade        # download the latest release for this OS/arch and replace the binary in place
+naru version        # show the installed version
+```
+
+`naru upgrade` verifies the release checksum before swapping the binary, and is a
+no-op when already on the latest version. (Re-running the install script or
+`go install ...@latest` works too.)
 
 ## Usage
 
