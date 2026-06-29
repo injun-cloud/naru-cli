@@ -92,7 +92,7 @@ Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
 	root.AddCommand(
 		newLoginCmd(), newLogoutCmd(), newWhoamiCmd(), newSchemaCmd(),
 		newProjectCmd(), newMemberCmd(), newAppCmd(), newAddonCmd(), newSecretCmd(), newTunnelCmd(),
-		newMCPCmd(),
+		newVersionCmd(), newUpgradeCmd(), newMCPCmd(),
 	)
 	return root
 }
