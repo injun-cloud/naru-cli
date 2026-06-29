@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="200" viewBox="0 0 620 200">
+  <!-- naru horizontal lockup: mark + wordmark -->
+  <g transform="translate(20 20) scale(0.4)" fill="#000000">
+    <rect x="81" y="73" width="19" height="254"/>
+    <rect x="81" y="73" width="34" height="19"/>
+    <rect x="81" y="308" width="34" height="19"/>
+    <rect x="300" y="73" width="19" height="254"/>
+    <rect x="285" y="73" width="34" height="19"/>
+    <rect x="285" y="308" width="34" height="19"/>
+    <rect x="130" y="191" width="95" height="18"/>
+    <polygon points="216,168 216,232 270,200"/>
+  </g>
+  <text x="200" y="124" font-family="Helvetica, Arial, sans-serif" font-weight="800" font-size="72" letter-spacing="4" fill="#000000">NARU<tspan font-size="28" baseline-shift="super">™</tspan></text>
+</svg>

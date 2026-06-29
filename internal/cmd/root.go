@@ -78,6 +78,14 @@ Apps and addons are declarative: "get -o yaml" to read a spec, change it, then
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,
+		// Bare `naru` prints a small banner + help; an unknown subcommand still errors.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+			}
+			fmt.Printf("  [ → ]  naru %s\n  git push, it ships.\n\n", version)
+			return cmd.Help()
+		},
 	}
 	pf := root.PersistentFlags()
 	pf.StringVarP(&flagProject, "project", "p", "", "project (overrides $NARU_PROJECT and .naru)")
