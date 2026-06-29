@@ -36,11 +36,15 @@ func New(base, token string) *Client {
 	noRedirect := func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse // never follow redirects (avoid token leakage)
 	}
+	// The stream client has no overall timeout (log follow runs indefinitely) but
+	// bounds the response-header wait so a hung server can't block the handshake.
+	streamTransport := http.DefaultTransport.(*http.Transport).Clone()
+	streamTransport.ResponseHeaderTimeout = 30 * time.Second
 	return &Client{
 		base:   strings.TrimRight(base, "/"),
 		token:  token,
 		http:   &http.Client{Timeout: 30 * time.Second, CheckRedirect: noRedirect},
-		stream: &http.Client{CheckRedirect: noRedirect}, // no timeout for log streams
+		stream: &http.Client{CheckRedirect: noRedirect, Transport: streamTransport},
 	}
 }
 
@@ -100,12 +104,19 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		return err
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	const maxBody = 8 << 20
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if len(data) == maxBody {
+		return fmt.Errorf("response exceeded %d-byte limit", maxBody)
+	}
 	if resp.StatusCode >= 400 {
 		return decodeErr(resp.StatusCode, data)
 	}
-	if out == nil {
-		return nil
+	if out == nil || len(data) == 0 {
+		return nil // no body to decode (caller wants nothing, or empty success body)
 	}
 	var env struct {
 		Data json.RawMessage `json:"data"`
