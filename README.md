@@ -1,61 +1,38 @@
 # naru
 
-The CLI and MCP client for the [Naru](https://naru.injunweb.com) platform — manage
-projects, apps, addons, secrets, deploys, and tunnels from your terminal or an AI agent.
+CLI + MCP client for the [Naru](https://naru.injunweb.com) platform — manage
+projects, apps, addons, secrets, and deploys from your terminal or an AI agent.
 
 ## Install
 
-**Script (macOS / Linux):**
-
 ```sh
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/injun-cloud/naru-cli/main/install.sh | sh
-```
 
-**Go (any platform with Go ≥ 1.26):**
-
-```sh
+# any platform with Go
 go install github.com/injun-cloud/naru-cli/cmd/naru@latest
 ```
 
-**Windows / manual:** download the archive for your OS/arch from the
-[latest release](https://github.com/injun-cloud/naru-cli/releases/latest)
-(`naru_windows_amd64.zip`, etc.) and put `naru` on your `PATH` — or use `go install` above.
+Windows: grab the `.zip` from the [latest release](https://github.com/injun-cloud/naru-cli/releases/latest).
 
-## Upgrade
+Update anytime with `naru upgrade`.
 
-```sh
-naru upgrade        # download the latest release for this OS/arch and replace the binary in place
-naru version        # show the installed version
-```
-
-`naru upgrade` verifies the release checksum before swapping the binary, and is a
-no-op when already on the latest version. (Re-running the install script or
-`go install ...@latest` works too.)
-
-## Usage
+## Quickstart
 
 ```sh
-naru login                       # authenticate (GitHub OAuth)
-naru project ls                  # your projects
-naru app ls -p myproj            # apps in a project
-naru app logs api -p myproj -f   # follow logs
-naru schema                      # project-spec field reference
-naru --help                      # all commands
+naru login                  # sign in with GitHub
+naru project ls             # your projects
+naru app ls -p myproj       # apps in a project
+naru app logs api -p myproj -f
+naru --help                 # everything else
 ```
 
-Output is human tables by default; pass `--json` (or `--jq '<expr>'`) for machine
-output. Apps and addons are declarative — `get -o yaml` a spec, edit it, then
-`apply -f`.
+Add `--json` to any command for machine-readable output.
 
-### MCP server
+## AI agents (MCP)
 
-`naru mcp` exposes the platform to AI agents over stdio. Point your agent at:
+Point your agent at `naru mcp`:
 
 ```json
 { "command": "naru", "args": ["mcp"] }
 ```
-
-## Release
-
-Tag-driven via [GoReleaser](https://goreleaser.com): push a `vX.Y.Z` tag and CI
-builds cross-platform binaries and publishes a GitHub Release.
