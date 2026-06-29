@@ -29,36 +29,6 @@ func newAppCmd() *cobra.Command {
 	return c
 }
 
-// upsertApp creates the app if absent, otherwise replaces it (PUT). The CI-owned
-// git hash is preserved server-side. It returns "created"/"updated" and the
-// server-returned spec.
-func upsertApp(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AppSpec) (string, apitypes.AppSpec, error) {
-	var out apitypes.AppSpec
-	if spec.Name == "" || spec.Git.Owner == "" || spec.Git.Repo == "" {
-		return "", out, fmt.Errorf("spec needs name and git.owner/git.repo")
-	}
-	spec.Git.Type = "github"
-	if spec.Git.Branch == "" {
-		spec.Git.Branch = "main"
-	}
-	err := cl.Get(cmd.Context(), appPath(project, spec.Name), &apitypes.AppSpec{})
-	if err == nil {
-		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-		if err := cl.Put(cmd.Context(), appPath(project, spec.Name), req, &out); err != nil {
-			return "", out, err
-		}
-		return "updated", out, nil
-	}
-	if !client.NotFound(err) {
-		return "", out, err
-	}
-	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/apps", req, &out); err != nil {
-		return "", out, err
-	}
-	return "created", out, nil
-}
-
 func appListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "ls", Aliases: []string{"list"}, Short: "List apps",
@@ -109,7 +79,7 @@ func appCreateCmd() *cobra.Command {
 				Name: args[0],
 				Git:  apitypes.GitSpec{Type: "github", Owner: owner, Repo: name, Branch: branch},
 			}
-			action, out, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := cl.UpsertApp(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -194,7 +164,7 @@ func appEditCmd() *cobra.Command {
 				return err
 			}
 			spec.Name = args[0] // name is immutable
-			action, out, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := cl.UpsertApp(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -220,7 +190,7 @@ func appApplyCmd() *cobra.Command {
 			if err := loadSpecFile(file, &spec); err != nil {
 				return err
 			}
-			action, out, err := upsertApp(cmd, cl, project, spec)
+			action, out, err := cl.UpsertApp(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -316,22 +286,6 @@ func appStatusCmd() *cobra.Command {
 	}
 }
 
-// logQuery builds the query string for a log stream, URL-escaping the optional
-// container so a value containing & or # cannot corrupt or inject query params.
-func logQuery(follow bool, tail, since int, container string, previous bool) string {
-	q := url.Values{}
-	q.Set("follow", strconv.FormatBool(follow))
-	q.Set("tail", strconv.Itoa(tail))
-	q.Set("since", strconv.Itoa(since))
-	if container != "" {
-		q.Set("container", container)
-	}
-	if previous {
-		q.Set("previous", "true")
-	}
-	return "?" + q.Encode()
-}
-
 func appLogsCmd() *cobra.Command {
 	var follow, previous bool
 	var tail, since int
@@ -344,7 +298,7 @@ func appLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container, previous), func(line string) {
+			return cl.Stream(cmd.Context(), appPath(project, args[0])+"/logs"+client.LogQuery(follow, tail, since, container, previous), func(line string) {
 				fmt.Println(line)
 			})
 		},

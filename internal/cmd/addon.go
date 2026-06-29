@@ -22,36 +22,6 @@ func newAddonCmd() *cobra.Command {
 	return c
 }
 
-// upsertAddon creates the addon if absent, otherwise replaces it. The addon type
-// is immutable. Returns "created"/"updated" and the server-returned spec.
-func upsertAddon(cmd *cobra.Command, cl *client.Client, project string, spec apitypes.AddonSpec) (string, apitypes.AddonSpec, error) {
-	var out apitypes.AddonSpec
-	if spec.Name == "" || spec.Type == "" || spec.Version == "" {
-		return "", out, fmt.Errorf("spec needs name, type and version")
-	}
-	if spec.Size == "" {
-		spec.Size = "1Gi"
-	}
-	req := apitypes.AddonCreateRequest{Name: spec.Name, Type: spec.Type, Version: spec.Version, Size: spec.Size, Resources: spec.Resources}
-	if spec.Port > 0 {
-		req.Port = &spec.Port
-	}
-	err := cl.Get(cmd.Context(), addonPath(project, spec.Name), &apitypes.AddonSpec{})
-	if err == nil {
-		if err := cl.Put(cmd.Context(), addonPath(project, spec.Name), req, &out); err != nil {
-			return "", out, err
-		}
-		return "updated", out, nil
-	}
-	if !client.NotFound(err) {
-		return "", out, err
-	}
-	if err := cl.Post(cmd.Context(), "/v1/projects/"+url.PathEscape(project)+"/addons", req, &out); err != nil {
-		return "", out, err
-	}
-	return "created", out, nil
-}
-
 func addonListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "ls", Aliases: []string{"list"}, Short: "List addons",
@@ -90,7 +60,7 @@ func addonCreateCmd() *cobra.Command {
 				return err
 			}
 			spec := apitypes.AddonSpec{Name: args[0], Type: typ, Version: version, Size: size, Port: port}
-			action, out, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := cl.UpsertAddon(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -173,7 +143,7 @@ func addonEditCmd() *cobra.Command {
 				return err
 			}
 			spec.Name, spec.Type = args[0], cur.Type // name + type are immutable
-			action, out, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := cl.UpsertAddon(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -198,7 +168,7 @@ func addonApplyCmd() *cobra.Command {
 			if err := loadSpecFile(file, &spec); err != nil {
 				return err
 			}
-			action, out, err := upsertAddon(cmd, cl, project, spec)
+			action, out, err := cl.UpsertAddon(cmd.Context(), project, spec)
 			if err != nil {
 				return err
 			}
@@ -289,7 +259,7 @@ func addonLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+logQuery(follow, tail, since, container, previous), func(line string) {
+			return cl.Stream(cmd.Context(), addonPath(project, args[0])+"/logs"+client.LogQuery(follow, tail, since, container, previous), func(line string) {
 				fmt.Println(line)
 			})
 		},

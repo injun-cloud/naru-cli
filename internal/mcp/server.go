@@ -107,24 +107,6 @@ func collectLogs(ctx context.Context, path string) (*mcp.CallToolResult, error) 
 
 func arg(req mcp.CallToolRequest, k string) string { return req.GetString(k, "") }
 
-// logQuery builds a bounded (non-following) log query string consistently with
-// the CLI's logQuery, URL-escaping the optional container.
-func logQuery(tail, since int, container string, previous bool) string {
-	q := url.Values{}
-	q.Set("follow", "false")
-	q.Set("tail", strconv.Itoa(tail))
-	if since > 0 {
-		q.Set("since", strconv.Itoa(since))
-	}
-	if container != "" {
-		q.Set("container", container)
-	}
-	if previous {
-		q.Set("previous", "true")
-	}
-	return "?" + q.Encode()
-}
-
 // scalarVars converts the MCP "vars" argument into string secret values. It
 // rejects a missing/non-object argument or any non-scalar value (object, array,
 // null) so a structured value is never silently formatted into a garbage secret.
@@ -135,6 +117,9 @@ func scalarVars(req mcp.CallToolRequest) (map[string]string, error) {
 	}
 	out := make(map[string]string, len(raw))
 	for k, v := range raw {
+		if err := apitypes.ValidSecretKey(k); err != nil {
+			return nil, err
+		}
 		switch t := v.(type) {
 		case string:
 			out[k] = t
@@ -248,49 +233,6 @@ func specArg(req mcp.CallToolRequest, v any) error {
 		return err
 	}
 	return json.Unmarshal(raw, v)
-}
-
-// upsertApp creates the app if absent, else replaces it (PUT, hash preserved).
-func upsertApp(ctx context.Context, cl *client.Client, project string, spec apitypes.AppSpec) (string, error) {
-	if spec.Name == "" || spec.Git.Owner == "" || spec.Git.Repo == "" {
-		return "", fmt.Errorf("spec needs name and git.owner/git.repo")
-	}
-	spec.Git.Type = "github"
-	if spec.Git.Branch == "" {
-		spec.Git.Branch = "main"
-	}
-	path := fmt.Sprintf("/v1/projects/%s/apps/%s", url.PathEscape(project), url.PathEscape(spec.Name))
-	var out apitypes.AppSpec
-	if err := cl.Get(ctx, path, &apitypes.AppSpec{}); err == nil {
-		req := apitypes.AppUpdateRequest{Git: &spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-		return "updated", cl.Put(ctx, path, req, &out)
-	} else if !client.NotFound(err) {
-		return "", err
-	}
-	req := apitypes.AppCreateRequest{Name: spec.Name, Git: spec.Git, Replicas: spec.Replicas, Resources: spec.Resources, Rollout: spec.Rollout, Endpoints: spec.Endpoints}
-	return "created", cl.Post(ctx, "/v1/projects/"+url.PathEscape(project)+"/apps", req, &out)
-}
-
-// upsertAddon creates the addon if absent, else replaces it (type immutable).
-func upsertAddon(ctx context.Context, cl *client.Client, project string, spec apitypes.AddonSpec) (string, error) {
-	if spec.Name == "" || spec.Type == "" || spec.Version == "" {
-		return "", fmt.Errorf("spec needs name, type and version")
-	}
-	if spec.Size == "" {
-		spec.Size = "1Gi"
-	}
-	req := apitypes.AddonCreateRequest{Name: spec.Name, Type: spec.Type, Version: spec.Version, Size: spec.Size, Resources: spec.Resources}
-	if spec.Port > 0 {
-		req.Port = &spec.Port
-	}
-	path := fmt.Sprintf("/v1/projects/%s/addons/%s", url.PathEscape(project), url.PathEscape(spec.Name))
-	var out apitypes.AddonSpec
-	if err := cl.Get(ctx, path, &apitypes.AddonSpec{}); err == nil {
-		return "updated", cl.Put(ctx, path, req, &out)
-	} else if !client.NotFound(err) {
-		return "", err
-	}
-	return "created", cl.Post(ctx, "/v1/projects/"+url.PathEscape(project)+"/addons", req, &out)
 }
 
 func register(s *mcpserver.MCPServer) {
@@ -408,7 +350,7 @@ func register(s *mcpserver.MCPServer) {
 		if err := specArg(req, &spec); err != nil {
 			return errResult(err), nil
 		}
-		action, err := upsertApp(ctx, cl, arg(req, "project"), spec)
+		action, _, err := cl.UpsertApp(ctx, arg(req, "project"), spec)
 		if err != nil {
 			return errResult(err), nil
 		}
@@ -474,7 +416,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
-			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
+			q := client.LogQuery(false, req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/logs%s", p, a, q))
 		})
 
@@ -498,7 +440,7 @@ func register(s *mcpserver.MCPServer) {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projApp(req)
 			// Build pods hardcode container "main"; no container override on purpose.
-			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), "", req.GetBool("previous", false))
+			q := client.LogQuery(false, req.GetInt("tail", 200), req.GetInt("since", 0), "", req.GetBool("previous", false))
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/builds/%s/logs%s", p, a, url.PathEscape(arg(req, "build")), q))
 		})
 
@@ -575,7 +517,7 @@ func register(s *mcpserver.MCPServer) {
 		mcp.WithBoolean("previous", mcp.Description("logs from the previous (crashed) container instance")), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			p, a := projAddon(req)
-			q := logQuery(req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
+			q := client.LogQuery(false, req.GetInt("tail", 200), req.GetInt("since", 0), arg(req, "container"), req.GetBool("previous", false))
 			return collectLogs(ctx, fmt.Sprintf("/v1/projects/%s/addons/%s/logs%s", p, a, q))
 		})
 
@@ -605,7 +547,7 @@ func register(s *mcpserver.MCPServer) {
 		if err := specArg(req, &spec); err != nil {
 			return errResult(err), nil
 		}
-		action, err := upsertAddon(ctx, cl, arg(req, "project"), spec)
+		action, _, err := cl.UpsertAddon(ctx, arg(req, "project"), spec)
 		if err != nil {
 			return errResult(err), nil
 		}
