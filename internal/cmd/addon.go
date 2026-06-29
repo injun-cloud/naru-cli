@@ -221,7 +221,7 @@ func addonConnCmd() *cobra.Command {
 				if dto.Username != "" {
 					fmt.Printf("username: %s (default superuser, no password)\n", dto.Username)
 				}
-				fmt.Println("note:     passwordless — the project is network-isolated; set your own auth after connecting")
+				fmt.Println("note:     passwordless — reachable only from inside the project; set your own auth after connecting")
 			})
 		},
 	}
