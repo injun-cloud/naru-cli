@@ -48,12 +48,6 @@ func New(base, token string) *Client {
 	}
 }
 
-// Base returns the server base URL.
-func (c *Client) Base() string { return c.base }
-
-// Token returns the bearer token.
-func (c *Client) Token() string { return c.token }
-
 // APIError is a decoded server error envelope.
 type APIError struct {
 	Status int
