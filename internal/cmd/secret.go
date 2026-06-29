@@ -30,6 +30,11 @@ func mergeSecrets(cmd *cobra.Command, app string, vars map[string]string) error 
 	if err != nil {
 		return err
 	}
+	for k := range vars {
+		if err := apitypes.ValidSecretKey(k); err != nil {
+			return err
+		}
+	}
 	if err := cl.Patch(cmd.Context(), secretPath(project, app), apitypes.SecretVars{Vars: vars}, nil); err != nil {
 		return err
 	}
