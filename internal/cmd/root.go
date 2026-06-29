@@ -2,11 +2,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -29,11 +32,14 @@ var (
 	version = "dev"
 )
 
-// Execute runs the root command.
+// Execute runs the root command. A signal-aware context cancels in-flight work
+// (log streams, tunnels, requests) on Ctrl-C/SIGTERM via every cmd.Context().
 func Execute(v string) {
 	version = v
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	root := newRoot()
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		output.Errf("%v", err)
 		os.Exit(exitCode(err))
 	}
