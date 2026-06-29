@@ -1,7 +1,14 @@
-# naru
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img alt="naru" src="docs/logo.svg" width="300">
+  </picture>
+</p>
 
-CLI + MCP client for the [Naru](https://naru.injunweb.com) platform — manage
-projects, apps, addons, secrets, and deploys from your terminal or an AI agent.
+<p align="center">
+  CLI + MCP client for the <a href="https://naru.injunweb.com">Naru</a> platform —
+  manage projects, apps, addons, secrets, and deploys from your terminal or an AI agent.
+</p>
 
 ## Install
 
