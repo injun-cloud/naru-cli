@@ -20,12 +20,39 @@ import (
 	"github.com/injun-cloud/naru-cli/internal/config"
 )
 
+// instructions is the server-level guide the host injects into the agent's
+// context on connect, so it grasps the platform model and workflow in one shot
+// rather than reverse-engineering it from 31 individual tools.
+const instructions = `Naru is a GitOps PaaS. You manage projects; each project holds applications and
+addons.
+
+- An application is built from its GitHub repo's own Dockerfile and deployed.
+  A normal "git push" to its branch builds and deploys automatically; deploy_app
+  only forces a build (first build, or re-deploy without a code change).
+- An addon is a managed database/cache (postgres|mysql|mongo|redis). Addons are
+  passwordless and network-isolated per project — set auth yourself if needed.
+- Apps and addons in the same project reach each other by name as the hostname,
+  e.g. an app connects to an addon named "db" at host "db".
+
+Desired state is declarative: apply_app / apply_addon take a full spec object.
+Call get_schema first to learn the exact spec fields. Config (replicas, rollout,
+endpoints/routes) lives in the spec; secrets go through set_secret (injected as
+env); runtime state is read via get_app_status / get_app_logs.
+
+Typical flow: create_project → apply_app (with git owner/repo) → push code (or
+deploy_app for the first build) → get_app_status / get_app_logs. Promote/abort
+gate paused rollouts. Tool hints mark reads (safe), destructive deletes, and
+idempotent applies. You act as the logged-in user; you only see projects you own.`
+
 // Serve starts the stdio MCP server.
 func Serve(version string) error {
 	// WithInputSchemaValidation enforces each tool's declared required args and
 	// types before the handler runs, so a missing/wrong-typed arg returns a clean
 	// validation error to the agent instead of a malformed request or a panic.
-	s := mcpserver.NewMCPServer("naru", version, mcpserver.WithInputSchemaValidation())
+	s := mcpserver.NewMCPServer("naru", version,
+		mcpserver.WithInputSchemaValidation(),
+		mcpserver.WithInstructions(instructions),
+	)
 	register(s)
 	return mcpserver.ServeStdio(s)
 }
