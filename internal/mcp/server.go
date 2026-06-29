@@ -22,7 +22,7 @@ import (
 
 // instructions is the server-level guide the host injects into the agent's
 // context on connect, so it grasps the platform model and workflow in one shot
-// rather than reverse-engineering it from 31 individual tools.
+// rather than reverse-engineering it from the individual tools.
 const instructions = `Naru is a GitOps PaaS. You manage projects; each project holds applications and
 addons.
 
