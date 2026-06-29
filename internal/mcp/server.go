@@ -482,6 +482,15 @@ func register(s *mcpserver.MCPServer) {
 			return getInto[apitypes.SecretKeys](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/secrets", p, a))
 		})
 
+	s.AddTool(mcp.NewTool("get_secret_values",
+		mcp.WithDescription("Reveal an app's secret KEY=VALUE pairs in plaintext (unlike list_secrets, which returns keys only). The values enter your context — handle with care."),
+		mcp.WithString("project", mcp.Required()),
+		mcp.WithString("app", mcp.Required()), ro, nd),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			p, a := projApp(req)
+			return getInto[apitypes.SecretVars](ctx, fmt.Sprintf("/v1/projects/%s/apps/%s/secrets?values=true", p, a))
+		})
+
 	s.AddTool(mcp.NewTool("set_secret",
 		mcp.WithDescription("Set (merge) secrets on an app. They become environment variables; takes effect on the next sync/rollout."),
 		mcp.WithString("project", mcp.Required()),

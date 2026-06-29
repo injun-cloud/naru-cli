@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -20,8 +21,48 @@ func secretPath(project, app string) string {
 
 func newSecretCmd() *cobra.Command {
 	c := &cobra.Command{Use: "secret", Aliases: []string{"env"}, Short: "Manage app secrets (environment)"}
-	c.AddCommand(secretLsCmd(), secretSetCmd(), secretRmCmd(), secretLoadCmd())
+	c.AddCommand(secretLsCmd(), secretGetCmd(), secretSetCmd(), secretRmCmd(), secretLoadCmd())
 	return c
+}
+
+func secretGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use: "get <app> [KEY...]", Short: "Show secret values (all, or the given keys)", Args: cobra.MinimumNArgs(1),
+		Example: "  naru secret get api -p myproj\n  naru secret get api DATABASE_URL -p myproj",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, project, err := clientAndProject()
+			if err != nil {
+				return err
+			}
+			var sv apitypes.SecretVars
+			if err := cl.Get(cmd.Context(), secretPath(project, args[0])+"?values=true", &sv); err != nil {
+				return err
+			}
+			out := sv.Vars
+			if out == nil {
+				out = map[string]string{}
+			}
+			if len(args) > 1 { // filter to the requested keys
+				sel := map[string]string{}
+				for _, k := range args[1:] {
+					if v, ok := out[k]; ok {
+						sel[k] = v
+					}
+				}
+				out = sel
+			}
+			return printer().Emit(out, func() {
+				keys := make([]string, 0, len(out))
+				for k := range out {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					fmt.Printf("%s=%s\n", k, out[k])
+				}
+			})
+		},
+	}
 }
 
 // mergeSecrets PATCHes the given vars onto an app's secret (create-or-merge).
