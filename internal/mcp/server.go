@@ -23,14 +23,14 @@ import (
 // instructions is the server-level guide the host injects into the agent's
 // context on connect, so it grasps the platform model and workflow in one shot
 // rather than reverse-engineering it from the individual tools.
-const instructions = `Naru is a GitOps PaaS. You manage projects; each project holds applications and
+const instructions = `Naru is a platform for deploying apps. You manage projects; each project holds applications and
 addons.
 
 - An application is built from its GitHub repo's own Dockerfile and deployed.
   A normal "git push" to its branch builds and deploys automatically; deploy_app
   only forces a build (first build, or re-deploy without a code change).
 - An addon is a managed database/cache (postgres|mysql|mongo|redis). Addons are
-  passwordless and network-isolated per project — set auth yourself if needed.
+  passwordless and isolated from other projects — set your own auth if needed.
 - Apps and addons in the same project reach each other by name as the hostname,
   e.g. an app connects to an addon named "db" at host "db".
 
@@ -41,7 +41,7 @@ env); runtime state is read via get_app_status / get_app_logs.
 
 Typical flow: create_project → apply_app (with git owner/repo) → push code (or
 deploy_app for the first build) → get_app_status / get_app_logs. Promote/abort
-gate paused rollouts. Tool hints mark reads (safe), destructive deletes, and
+gate a paused release. Tool hints mark reads (safe), destructive deletes, and
 idempotent applies. You act as the logged-in user; you only see projects you own.`
 
 // Serve starts the stdio MCP server.
@@ -309,7 +309,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("delete_project",
-		mcp.WithDescription("Delete a project and purge its app secrets from Vault. Irreversible."),
+		mcp.WithDescription("Delete a project and purge its apps, addons, and secrets. Irreversible."),
 		mcp.WithString("project", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return write(ctx, "DELETE", projAPI(req), nil)
@@ -385,7 +385,7 @@ func register(s *mcpserver.MCPServer) {
 	})
 
 	s.AddTool(mcp.NewTool("delete_app",
-		mcp.WithDescription("Delete an application and purge its secrets from Vault. Irreversible."),
+		mcp.WithDescription("Delete an application and purge its secrets. Irreversible."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), del),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -396,7 +396,7 @@ func register(s *mcpserver.MCPServer) {
 	// --- status / deploy / logs / builds ---
 
 	s.AddTool(mcp.NewTool("get_app_status",
-		mcp.WithDescription("Get an app's live deployment status (phase, replicas, image, pods)."),
+		mcp.WithDescription("Get an app's live status: current state, running/desired instances, image, and per-instance health."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -415,8 +415,8 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("promote_app",
-		mcp.WithDescription("Promote an app's paused Rollout — approve a manual canary/bluegreen gate, "+
-			"fully promoting the new version. Only needed when the app's rollout uses a manual pause."),
+		mcp.WithDescription("Promote an app's paused release — approve a manual deploy gate, "+
+			"fully rolling out the new version. Only needed when the app's deploy strategy uses a manual pause."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -425,7 +425,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("abort_app",
-		mcp.WithDescription("Abort an in-progress rollout (roll back to the last stable version) — the counterpart to promote_app."),
+		mcp.WithDescription("Abort an in-progress release (roll back to the last stable version) — the counterpart to promote_app."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()), nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -492,7 +492,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("set_secret",
-		mcp.WithDescription("Set (merge) secrets on an app. They become environment variables; takes effect on the next sync/rollout."),
+		mcp.WithDescription("Set (merge) secrets on an app. They become environment variables; takes effect on the next deploy."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("app", mcp.Required()),
 		mcp.WithObject("vars", mcp.Required(), mcp.Description("map of KEY to VALUE")),
@@ -535,7 +535,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("get_addon_status",
-		mcp.WithDescription("Get an addon's live deployment status (phase, replicas, image, pods)."),
+		mcp.WithDescription("Get an addon's live status: current state, running/desired instances, image, and per-instance health."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -558,7 +558,7 @@ func register(s *mcpserver.MCPServer) {
 		})
 
 	s.AddTool(mcp.NewTool("get_addon_connection",
-		mcp.WithDescription("Get an addon's connection info (type/host/port/username). Addons are passwordless (network-isolated). Fetch this and write the values into an app's secret with set_secret, under whatever key names the app expects."),
+		mcp.WithDescription("Get an addon's connection info (type/host/port/username). Addons are passwordless (isolated from other projects). Fetch this and write the values into an app's secret with set_secret, under whatever key names the app expects."),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("addon", mcp.Required()), ro, nd),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -569,7 +569,7 @@ func register(s *mcpserver.MCPServer) {
 	applyAddon := mcp.NewToolWithRawSchema("apply_addon",
 		"Create or update an addon (declarative upsert). `spec` is the full addon spec "+
 			"(name, type, version, size, port, resources) — fields match `get_schema`. The "+
-			"addon type is immutable. Addons are passwordless (network-isolated); reach the addon "+
+			"addon type is immutable. Addons are passwordless; reach the addon "+
 			"by its name as hostname and wire an app to it with set_secret (env var names are your choice).",
 		applyToolSchema("addons"))
 	applyAddon.Annotations.DestructiveHint = ptr(false)

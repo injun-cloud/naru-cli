@@ -240,8 +240,8 @@ func addonStatusCmd() *cobra.Command {
 				return err
 			}
 			return printer().Emit(st, func() {
-				fmt.Printf("phase: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
-				renderPods(st.Pods)
+				fmt.Printf("state: %s  ready: %d/%d  image: %s\n", st.Phase, st.Ready, st.Desired, st.Image)
+				renderInstances(st.Pods)
 			})
 		},
 	}

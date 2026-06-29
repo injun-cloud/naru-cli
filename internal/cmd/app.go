@@ -234,11 +234,11 @@ func truncate(s string, max int) string {
 	return string(r[:max-1]) + "…"
 }
 
-// renderPods prints the shared pod status table for app/addon status. It folds
-// the exit code and last-termination reason into REASON when present.
-func renderPods(pods []apitypes.PodInfo) {
-	rows := make([][]string, 0, len(pods))
-	for _, p := range pods {
+// renderInstances prints the shared instance status table for app/addon status.
+// It folds the exit code and last-termination reason into REASON when present.
+func renderInstances(instances []apitypes.PodInfo) {
+	rows := make([][]string, 0, len(instances))
+	for _, p := range instances {
 		reason := p.Reason
 		if p.ExitCode != nil || p.LastTerminationReason != "" {
 			detail := ""
@@ -259,7 +259,7 @@ func renderPods(pods []apitypes.PodInfo) {
 		}
 		rows = append(rows, []string{p.Name, p.Phase, strconv.FormatBool(p.Ready), strconv.Itoa(p.Restarts), p.Age, reason})
 	}
-	output.Table([]string{"POD", "PHASE", "READY", "RESTARTS", "AGE", "REASON"}, rows)
+	output.Table([]string{"INSTANCE", "STATE", "READY", "RESTARTS", "AGE", "REASON"}, rows)
 }
 
 func appStatusCmd() *cobra.Command {
@@ -275,12 +275,12 @@ func appStatusCmd() *cobra.Command {
 				return err
 			}
 			return printer().Emit(st, func() {
-				line := fmt.Sprintf("phase: %s  ready: %d/%d", st.Phase, st.Ready, st.Desired)
+				line := fmt.Sprintf("state: %s  ready: %d/%d", st.Phase, st.Ready, st.Desired)
 				if st.Revision != "" {
 					line += "  rev: " + st.Revision
 				}
 				fmt.Println(line + "  image: " + st.Image)
-				renderPods(st.Pods)
+				renderInstances(st.Pods)
 			})
 		},
 	}
@@ -335,9 +335,9 @@ func appDeployCmd() *cobra.Command {
 
 func appPromoteCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "promote <name>", Short: "Promote a paused rollout (approve a manual canary/bluegreen gate)", Args: cobra.ExactArgs(1),
-		Long: "Resume a Rollout paused at a manual gate (canary pause / bluegreen manual\n" +
-			"promote), fully promoting the new version.",
+		Use: "promote <name>", Short: "Approve a paused release (manual deploy gate)", Args: cobra.ExactArgs(1),
+		Long: "Resume a release that is paused at a manual gate, fully rolling out the new\n" +
+			"version.",
 		Example: "  naru app promote api -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, project, err := clientAndProject()
@@ -357,8 +357,8 @@ func appPromoteCmd() *cobra.Command {
 
 func appAbortCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "abort <name>", Short: "Abort an in-progress rollout (roll back to the last stable version)", Args: cobra.ExactArgs(1),
-		Long: "Abort a Rollout that is in progress, rolling back to the last stable\n" +
+		Use: "abort <name>", Short: "Abort an in-progress release (roll back to the last stable version)", Args: cobra.ExactArgs(1),
+		Long: "Abort a release that is in progress, rolling back to the last stable\n" +
 			"version. The counterpart to `naru app promote`.",
 		Example: "  naru app abort api -p myproj",
 		RunE: func(cmd *cobra.Command, args []string) error {
